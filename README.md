@@ -44,6 +44,9 @@ and idempotency key.
 
 ## Validation
 
+Prerequisites: Rust 1.75+ and `jj` 0.40.0+ on `PATH` for CLI adapter parity
+tests.
+
 Standalone crate validation:
 
 ```bash

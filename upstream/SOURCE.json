@@ -1,18 +1,18 @@
 {
   "export_target": "/home/adam/publish/agent-up-sync-core",
-  "generated_at_utc": "2026-05-08T04:30:21Z",
+  "generated_at_utc": "2026-05-08T04:34:23Z",
   "git": {
     "branch": null,
-    "head": "041992b58c21"
+    "head": "cf3b3a12c043"
   },
   "jj": {
-    "published_parent_change": "rsoqtnrxnuqk",
-    "published_parent_commit": "041992b58c21",
-    "published_parent_description": "Add sync-core GitHub mirror export workflow",
-    "status": "The working copy has no changes.\nWorking copy  (@) : kstvkozu a0438e54 (empty) (no description set)\nParent commit (@-): rsoqtnrx 041992b5 rolling/control-center | Add sync-core GitHub mirror export workflow",
+    "published_parent_change": "otskstzpsmxz",
+    "published_parent_commit": "cf3b3a12c043",
+    "published_parent_description": "Use prebuilt JJ in sync-core mirror CI",
+    "status": "The working copy has no changes.\nWorking copy  (@) : kstvkozu ec789e6f (empty) (no description set)\nParent commit (@-): otskstzp cf3b3a12 rolling/control-center | Use prebuilt JJ in sync-core mirror CI",
     "status_ok": true,
     "workspace_change": "kstvkozuykqk",
-    "workspace_commit": "a0438e5442ba",
+    "workspace_commit": "ec789e6f8421",
     "workspace_description": null
   },
   "runtime": {
