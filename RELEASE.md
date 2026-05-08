@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-Initial Agent-Up sync-core kernel scaffold:
+Initial Agent-Up JJ Sync Core kernel scaffold:
 
 - library API and thin CLI;
 - JJ adapter trait with CLI adapter;
@@ -23,7 +23,7 @@ mirror with:
 
 ```bash
 python Apps/control_center/scripts/publish/export_agent_up_sync_core.py \
-  --target /home/adam/publish/agent-up-sync-core \
+  --target /home/adam/publish/agent-up-jj-sync-core \
   --apply \
   --init-git \
   --validate

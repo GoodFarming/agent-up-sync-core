@@ -5,7 +5,8 @@ edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
 publish = false
-description = "Agent-Up sync convergence kernel scaffold with read, guarded mutation, and transaction candidate modes"
+description = "Rust convergence kernel for Agent-Up JJ workspace sync orientation, conflict classification, and journaled transaction planning"
+repository = "https://github.com/GoodFarming/agent-up-jj-sync-core"
 
 [lib]
 name = "agent_up_sync_core"

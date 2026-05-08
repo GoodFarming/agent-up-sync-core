@@ -1,18 +1,18 @@
 {
-  "export_target": "/home/adam/publish/agent-up-sync-core",
-  "generated_at_utc": "2026-05-08T09:21:28Z",
+  "export_target": "/home/adam/publish/agent-up-jj-sync-core",
+  "generated_at_utc": "2026-05-08T09:31:16Z",
   "git": {
     "branch": null,
-    "head": "493da27f2332"
+    "head": "865d5a471148"
   },
   "jj": {
-    "published_parent_change": "lrrzytpnvpsy",
-    "published_parent_commit": "493da27f2332",
-    "published_parent_description": "Update OTS-66 closeout evidence for runtime and VSIX disk install",
-    "status": "The working copy has no changes.\nWorking copy  (@) : ruotxpnt b0ea6d07 (empty) (no description set)\nParent commit (@-): lrrzytpn 493da27f rolling/control-center | Update OTS-66 closeout evidence for runtime and VSIX disk install",
+    "published_parent_change": "xxuqtlkovtvl",
+    "published_parent_commit": "865d5a471148",
+    "published_parent_description": "Brand public sync-core as Agent-Up JJ Sync Core",
+    "status": "The working copy has no changes.\nWorking copy  (@) : ruotxpnt fe5bf6de (empty) (no description set)\nParent commit (@-): xxuqtlko 865d5a47 rolling/control-center | Brand public sync-core as Agent-Up JJ Sync Core",
     "status_ok": true,
     "workspace_change": "ruotxpntzspk",
-    "workspace_commit": "b0ea6d079057",
+    "workspace_commit": "fe5bf6de6b0f",
     "workspace_description": null
   },
   "runtime": {

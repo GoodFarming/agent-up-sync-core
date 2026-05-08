@@ -1,4 +1,4 @@
-# Architecture
+# Agent-Up JJ Sync Core Architecture
 
 `agent-up-sync-core` is a small Rust library plus a thin CLI wrapper.
 

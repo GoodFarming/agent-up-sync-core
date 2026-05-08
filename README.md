@@ -1,49 +1,179 @@
-# agent-up-sync-core
+# Agent-Up JJ Sync Core
 
-`agent-up-sync-core` is a library-first Rust convergence kernel for JJ-backed
-workspaces. Agent-Up is the first caller, but the crate boundary is intentionally
-usable by other systems that need fast repository orientation, source
-provenance, conflict classification, and journaled safe mutation planning.
+Agent-Up JJ Sync Core is a Rust convergence kernel for JJ-backed workspaces.
+It is designed to answer one hard question quickly and safely:
 
-## Current Authority
+> Given a selected workspace and a target live/root state, what is the exact
+> safe sync state, what conflicts exist, what can be resolved deterministically,
+> and what should the caller do next?
 
-- public worker command remains `agent-up sync`;
-- Python remains UX, policy, receipt rendering, runtime install, planning
+Agent-Up is the first caller. The crate boundary is intentionally library-first
+so other systems can also use it for fast repository orientation, source
+provenance, conflict classification, conflict packet generation, and journaled
+safe mutation planning.
+
+The current Cargo package and compatibility binary are still named
+`agent-up-sync-core`. The public project name is `Agent-Up JJ Sync Core` because
+the core is specifically about JJ workspace convergence.
+
+## Why It Exists
+
+Agent-Up manages many disposable worker workspaces converging into one live
+root. The public worker contract is deliberately simple: ordinary agents run
+`agent-up sync`; they should not become JJ operators.
+
+Python can orchestrate that contract, but rich sync orientation through repeated
+JJ CLI subprocesses is expensive and hard to reason about:
+
+- each graph question can reopen the repo;
+- subprocess startup and JSON/text parsing dominate routine paths;
+- conflict side-context is easy to under-project;
+- fallback and provenance can become ambiguous;
+- internal JJ cost can stay high even when worker guidance is clean.
+
+This Rust core exists to move the expensive, algorithmic part into one
+transaction boundary: one request, one repo/workspace snapshot, one structured
+decision.
+
+## Advantages
+
+- **Fast orientation**: `jj-lib` read mode opens one in-process snapshot instead
+  of shelling out for every graph fact.
+- **Explicit state machine**: workspace, source, live target, conflict,
+  mutation, and output states are all represented in the response.
+- **Richer conflict packets**: the core can assemble base/live/worker side
+  context and classify semantic, generated, metadata, and mixed conflicts.
+- **Safe authority progression**: shadow/read authority comes before guarded
+  mutation, and Python fallback remains visible.
+- **Journal-first mutation model**: mutation modes require protected revisions,
+  recovery handles, before/after operation ids, and idempotency keys.
+- **Agent-friendly receipts**: callers can expose one clear next action without
+  leaking raw JJ commands to ordinary workers.
+- **Reusable boundary**: the library has no UI dependency and no Agent-Up-only
+  schema assumptions beyond the JSON request/response contract.
+
+## How It Fits Agent-Up
+
+In the full Agent-Up system:
+
+- `agent-up sync` remains the public command;
+- Python remains UX, policy, receipt rendering, runtime install, workpack
   integration, feature flags, and fallback;
-- Rust owns schema-checked shadow, read-authority, guarded-mutation, and
-  transaction-candidate decisions only when the caller requests those modes;
-- transaction-candidate executor mode is an explicit flag that can perform the
-  resolved-conflict fold/publish path in disposable/canary-safe contexts and
-  reports `mutation_performed`, before/after operation ids, published revision
-  reachability, and idempotency replay state;
-- Python fallback is required in every mode;
-- no JJ internals are exposed in the public schema.
-- `adapter_profile=jj-lib` is read-only: it uses `jj-lib 0.40.0` to open one
-  in-process workspace/repo snapshot and must report zero adapter subprocesses;
-  `CliJjAdapter` and Python fallback remain available and receipt-visible.
+- Rust owns schema-checked sync classification and, in guarded modes, narrow
+  mutation planning/execution;
+- runtime activation is separate from source publication;
+- receipts must say whether the path was `rust_shadow`,
+  `rust_read_authoritative`, `rust_transaction_candidate`, or `python_fallback`.
 
-## API Shape
+The first major efficiency target is read authority:
 
-The library accepts one `SyncCoreRequest` and returns one `SyncCoreResponse`.
-The CLI binary is a thin JSON wrapper around the same library call.
+```text
+CONTROLCENTER_SYNC_CORE_ADAPTER=jj-lib agent-up sync --probe --brief --json
+```
 
-Key response families:
+For read orientation, `adapter_profile=jj-lib` must report:
 
-- state machine trace: workspace, source, target/live, conflict, mutation, output;
-- provenance: workspace/source/live revisions and sync group id;
-- conflict packet candidate: base/live/worker side context and path classes;
-- mutation plan and journal: present only for authorized mutation modes;
-- telemetry: latency, memory/output estimates, repo lock time, graph facts, and
-  degraded-state reason;
-- fallback: receipt-visible Python fallback command and reason.
+- `adapter_subprocess_count=0`;
+- `adapter_jj_command_count=0`;
+- `repo_snapshot_count=1`;
+- `parity_state=matched` or a typed degraded/fallback state.
+
+## How The Design Emerged
+
+The core came out of real multi-agent sync incidents:
+
+- workers resolving materialized semantic conflicts still needed manual JJ fold
+  operations;
+- generated registry/artifact conflicts needed deterministic policy;
+- `no_local_commit` was not the bug, ambiguous source provenance was;
+- clean receipts could hide high internal JJ cost;
+- agents needed conflict side-context, not raw VCS archaeology.
+
+The design response was:
+
+1. define a Python corpus as the behavioral constitution;
+2. add a schema-first Rust/Python boundary;
+3. run Rust in shadow mode before authority;
+4. promote read-path authority before mutation;
+5. require a recovery journal before mutation;
+6. measure latency, repo lock time, memory, output size, and fallback quality
+   instead of only counting JJ commands.
+
+## Current Capabilities
+
+- JSON request/response schema.
+- Library API plus thin CLI wrapper.
+- `CliJjAdapter` fallback.
+- Read-only `JjLibAdapter` behind the `jj-lib-adapter` feature.
+- Shadow and read-authority classifications.
+- Generated/semantic conflict classification inputs.
+- Conflict packet candidate output.
+- Guarded mutation and transaction-candidate planning surfaces.
+- Transaction candidate support for controlled resolved-conflict continuation
+  paths in Agent-Up canaries.
+- Performance budget telemetry.
+
+## Deploying It
+
+### Standalone Rust
+
+Build and test:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+cargo bench --bench sync_transaction_classes -- --test
+```
+
+Run the CLI with a JSON `SyncCoreRequest` on stdin:
+
+```bash
+agent-up-sync-core < request.json
+```
+
+Use the default CLI adapter for compatibility, or compile with `jj-lib` support:
+
+```bash
+cargo build --no-default-features --features jj-lib-adapter
+```
+
+### Inside Agent-Up
+
+Agent-Up calls the binary once per sync transaction. A typical read-authority
+activation uses:
+
+```bash
+CONTROLCENTER_SYNC_CORE_PREFLIGHT_READ_AUTHORITY=1 \
+CONTROLCENTER_SYNC_CORE_ADAPTER=jj-lib \
+agent-up sync --probe --brief --json
+```
+
+The caller should keep Python fallback enabled until the local incident corpus
+and live canaries prove parity for the relevant sync classes.
 
 ## Safety Model
 
-Rust may classify deeply and apply deterministic generated-surface policy, but it
+Rust may classify deeply and apply deterministic generated-surface policy. It
 does not invent semantic merge intent. Unresolved semantic conflicts must be
-materialized for the caller. Mutation authority requires a preflight plan,
-journal record, protected source revision, recovery handle, before/after op ids,
-and idempotency key.
+materialized for the caller.
+
+Mutation authority requires:
+
+- a preflight plan;
+- a journal record;
+- protected source revision evidence;
+- before/after operation ids;
+- a recovery handle;
+- an idempotency key;
+- fallback or rollback visibility.
+
+## When Not To Use It
+
+This is not a replacement for JJ, Git, or human semantic judgment. It is a
+sync-orientation and convergence kernel. It is most useful when you need a
+structured decision about a JJ workspace and a live/root target, especially in
+multi-agent or automation-heavy systems.
 
 ## Validation
 
