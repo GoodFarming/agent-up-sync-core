@@ -1,0 +1,563 @@
+{
+  "schema_id": "control-center.agent-up.sync-core.python-expected-decisions.v0.1",
+  "schema_version": "v0.1",
+  "generated_from": [
+    "@planning/agent-up-v0.3/workpacks/sync-convergence-integrity-and-zero-jj-boundary-contract-v0.1/SYNC-PYTHON-INCIDENT-CORPUS.AU-V03-SCI-53.v0.1.md",
+    "@planning/agent-up-v0.3/workpacks/agent-up-sync-core-rust-transaction-kernel-v0.1/WORKPACK.AU-V03-SCR-63B.python-corpus-completion.v0.1.md"
+  ],
+  "rust_required": false,
+  "public_worker_command_family": "agent-up sync",
+  "authority_mode": "python_authoritative",
+  "required_receipt_invariants": [
+    "no_raw_jj_worker_guidance",
+    "one_agent_up_next_action_when_not_green",
+    "source_live_runtime_outcomes_separated",
+    "selected_workspace_truth_explicit",
+    "python_fallback_available",
+    "idempotency_rule_present",
+    "cost_class_present"
+  ],
+  "decision_classes": [
+    "noop",
+    "clean_merge",
+    "materialized_conflict",
+    "generated_policy_applied",
+    "degraded",
+    "blocked",
+    "parity_failed"
+  ],
+  "cost_classes": {
+    "clean_noop": {"initial_ceiling_jj": 12, "target_ceiling_jj": 5},
+    "clean_refresh": {"initial_ceiling_jj": 60, "target_ceiling_jj": 8},
+    "dirty_publish": {"initial_ceiling_jj": 130, "target_ceiling_jj": 25},
+    "head_advance_retry": {"initial_ceiling_jj": 160, "target_ceiling_jj": 35},
+    "generated_conflict_autoresolve": {"initial_ceiling_jj": 130, "target_ceiling_jj": 25},
+    "semantic_conflict_continuation": {"initial_ceiling_jj": 160, "target_ceiling_jj": 30},
+    "runtime_cutover": {"initial_ceiling_jj": 80, "target_ceiling_jj": 10},
+    "metadata_projection": {"initial_ceiling_jj": 130, "target_ceiling_jj": 25},
+    "recovery": {"initial_ceiling_jj": 160, "target_ceiling_jj": 35},
+    "cross_repo_noop": {"initial_ceiling_jj": 12, "target_ceiling_jj": 5}
+  },
+  "fixtures": [
+    {
+      "fixture_id": "sync_clean_noop_no_local_commit",
+      "slice": "provenance_clean_states",
+      "incident_family": "no authored work and no local commit",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "green_noop",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "disallowed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "same_green_noop", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "clean_noop", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 0, "latency_budget_ms": 250},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 current fixture cost posture"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "clean_requires_never_authored_or_published_proof", "cost_class_present"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_clean_refresh_after_root_advance",
+      "slice": "provenance_clean_states",
+      "incident_family": "root moved while worker clean",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "green_refresh",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["refresh_selected_workspace"]},
+      "idempotency": {"repeat_behavior": "same_green_noop_after_refresh", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "clean_refresh", "measurement_status": "measured_public_receipt_red_target", "observed_jj_command_count": 27, "latency_budget_ms": 500},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered_red_cost", "evidence_refs": ["SCI-53 clean refresh installed-runtime replay"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "selected_truth_agrees_after_sync", "cost_class_present"],
+      "rust_graduation_status": "ready_for_shadow_cost_pressure"
+    },
+    {
+      "fixture_id": "sync_dirty_publish_no_conflict",
+      "slice": "provenance_clean_states",
+      "incident_family": "authored work with no overlap",
+      "expected_decision": {
+        "decision_class": "clean_merge",
+        "expected_receipt_state": "published",
+        "source_effect": "published",
+        "live_effect": "advanced",
+        "runtime_effect": "content_hash_gated",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["commit_source", "publish_to_live", "refresh_worker"]},
+      "idempotency": {"repeat_behavior": "repeat_sync_reports_noop_or_already_published", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "dirty_publish", "measurement_status": "measured_public_receipt_red_target", "observed_jj_command_count": 57, "latency_budget_ms": 1000},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered_red_cost", "evidence_refs": ["SCR-63A publish receipts", "SCI-53 dirty-publish cost posture"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "source_publish_outcome_green", "runtime_effect_separate_from_source"],
+      "rust_graduation_status": "ready_for_shadow_cost_pressure"
+    },
+    {
+      "fixture_id": "sync_head_advance_contention_retry",
+      "slice": "provenance_clean_states",
+      "incident_family": "live head moves during publish",
+      "expected_decision": {
+        "decision_class": "clean_merge",
+        "expected_receipt_state": "published_after_retry_or_recoverable",
+        "source_effect": "published_or_recoverable",
+        "live_effect": "advanced_after_revalidation",
+        "runtime_effect": "content_hash_gated",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue_or_agent_up_repair"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["occ_revalidate", "retry_publish", "record_recovery_handle"]},
+      "idempotency": {"repeat_behavior": "retry_does_not_duplicate_or_abandon_source", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "head_advance_retry", "measurement_status": "needs_isolated_measure", "observed_jj_command_count": null, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "partial_occ_coverage", "replay_status": "partial", "evidence_refs": ["SCI-53 OCC coverage notes"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "prepared_source_recoverable_or_published", "occ_revalidation_state_present"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_prepared_retry_no_local_commit_lost_visibility",
+      "slice": "provenance_clean_states",
+      "incident_family": "prepared tip then retry sees no local commit",
+      "expected_decision": {
+        "decision_class": "degraded",
+        "expected_receipt_state": "recoverable_or_fail_closed",
+        "source_effect": "recoverable",
+        "live_effect": "unchanged_until_recovered",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "blocked_recoverable",
+        "next_agent_up_action": "agent_up_repair"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": ["record_recovery_handle"]},
+      "idempotency": {"repeat_behavior": "same_recovery_handle_or_already_published", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "recovery", "measurement_status": "unit_measured", "observed_jj_command_count": null, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["test_agent_up_occ_retry_cleanup.py"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "no_clean_without_provenance", "recovery_handle_present", "no_source_abandonment"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_already_published_no_local_commit",
+      "slice": "provenance_clean_states",
+      "incident_family": "source already reached rolling but local visibility is gone",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "already_published",
+        "source_effect": "already_published",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["clear_in_progress_marker"]},
+      "idempotency": {"repeat_behavior": "clean_noop_after_marker_clear", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "recovery", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 80, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 hidden-marker disposable replay"]},
+      "receipt_invariants": ["already_published_proof_present", "no_republish", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_generated_registry_live_authority",
+      "slice": "conflict_authority",
+      "incident_family": "generated runtime registry conflict without worker intent",
+      "expected_decision": {
+        "decision_class": "generated_policy_applied",
+        "expected_receipt_state": "generated_policy_restored",
+        "source_effect": "published_or_refreshed",
+        "live_effect": "live_generated_authority_preserved",
+        "runtime_effect": "content_hash_gated",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["restore_live_generated_authority", "fold_generated_resolution"]},
+      "idempotency": {"repeat_behavior": "no_reapply_after_generated_resolution", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "generated_conflict_autoresolve", "measurement_status": "unit_measured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["SCI-53 generated registry tests"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "generated_authority_declared", "worker_intent_absent", "no_semantic_auto_merge"],
+      "rust_graduation_status": "requires_public_cost_replay"
+    },
+    {
+      "fixture_id": "sync_generated_registry_worker_authored",
+      "slice": "conflict_authority",
+      "incident_family": "worker intentionally edited generated registry",
+      "expected_decision": {
+        "decision_class": "materialized_conflict",
+        "expected_receipt_state": "typed_generated_worker_authored_conflict",
+        "source_effect": "held",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "conflict_materialized",
+        "next_agent_up_action": "resolve_visible_files_then_agent_up_sync"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": ["materialize_conflict_packet"]},
+      "idempotency": {"repeat_behavior": "same_packet_until_resolution_or_superseded", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "generated_conflict_autoresolve", "measurement_status": "unit_measured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["SCI-53 generated registry tests"]},
+      "receipt_invariants": ["no_generated_autoresolve_with_worker_intent", "conflict_packet_authority_present", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "requires_public_cost_replay"
+    },
+    {
+      "fixture_id": "sync_generated_artifact_churn_ignored",
+      "slice": "conflict_authority",
+      "incident_family": "generated build artifacts appear during conflict resolution",
+      "expected_decision": {
+        "decision_class": "generated_policy_applied",
+        "expected_receipt_state": "generated_artifact_cleanup_or_ignore",
+        "source_effect": "semantic_source_preserved",
+        "live_effect": "unchanged_except_publish",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh_or_conflict_materialized",
+        "next_agent_up_action": "agent_up_sync"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["drop_known_generated_artifacts", "continue_semantic_packet"]},
+      "idempotency": {"repeat_behavior": "generated_artifacts_do_not_reappear_as_authored_delta", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "generated_conflict_autoresolve", "measurement_status": "documented_unmeasured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "documented_evidence", "replay_status": "expected_decision_only", "evidence_refs": ["Martin incident feedback"]},
+      "receipt_invariants": ["known_generated_artifacts_not_published_as_semantic_work", "one_agent_up_next_action_when_not_green", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_ab_resolve_fold_publish",
+      "slice": "conflict_authority",
+      "incident_family": "A publishes, B conflicts, B resolves visible files",
+      "expected_decision": {
+        "decision_class": "materialized_conflict",
+        "expected_receipt_state": "materialize_then_internal_continue_repaired",
+        "source_effect": "published_after_resolution",
+        "live_effect": "advanced_after_resolution",
+        "runtime_effect": "content_hash_gated",
+        "selected_workspace_state": "fresh_after_fold",
+        "next_agent_up_action": "resolve_visible_files_then_agent_up_sync"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["materialize_packet", "fold_resolved_child", "publish_retry"]},
+      "idempotency": {"repeat_behavior": "repeat_after_fold_is_noop", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "measured_public_receipt_red_target", "observed_jj_command_count": null, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered_red_cost", "evidence_refs": ["SCI-53 faithful disposable A/B replay"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "semantic_conflict_packet_visible", "no_semantic_auto_merge", "default_agent_up_sync_continues"],
+      "rust_graduation_status": "ready_for_shadow_cost_pressure"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_unrelated_edit_refused",
+      "slice": "conflict_authority",
+      "incident_family": "resolved conflict plus unrelated edits",
+      "expected_decision": {
+        "decision_class": "blocked",
+        "expected_receipt_state": "typed_block_mixed_paths",
+        "source_effect": "held",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "blocked",
+        "next_agent_up_action": "separate_unrelated_edits_or_agent_up_repair"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "same_typed_block_until_paths_are_clean", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "unit_measured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["SCI-53 semantic continuation tests"]},
+      "receipt_invariants": ["changed_paths_subset_guard", "no_mixed_work_publish", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_markers_remaining",
+      "slice": "conflict_authority",
+      "incident_family": "textual conflict markers remain",
+      "expected_decision": {
+        "decision_class": "blocked",
+        "expected_receipt_state": "typed_block_markers_remaining",
+        "source_effect": "held",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "blocked",
+        "next_agent_up_action": "resolve_visible_files_then_agent_up_sync"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "same_marker_block_until_markers_removed", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "unit_measured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["SCI-53 semantic continuation tests"]},
+      "receipt_invariants": ["marker_scan_blocks_fold", "visible_resolution_required", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_stale_packet",
+      "slice": "conflict_authority",
+      "incident_family": "conflict packet anchors are stale",
+      "expected_decision": {
+        "decision_class": "blocked",
+        "expected_receipt_state": "typed_block_stale_packet",
+        "source_effect": "held_or_rematerialized",
+        "live_effect": "unchanged_until_revalidated",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "blocked",
+        "next_agent_up_action": "agent_up_sync"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": ["rematerialize_if_revalidated"]},
+      "idempotency": {"repeat_behavior": "same_stale_block_or_fresh_packet", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "unit_only_unmeasured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["SCI-53 stale packet fixture"]},
+      "receipt_invariants": ["packet_anchor_guard", "no_fold_on_stale_anchor", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "requires_public_cost_replay"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_multi_commit_range",
+      "slice": "conflict_authority",
+      "incident_family": "multi-commit unpublished range",
+      "expected_decision": {
+        "decision_class": "blocked",
+        "expected_receipt_state": "typed_block_multi_commit_range",
+        "source_effect": "held",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "blocked",
+        "next_agent_up_action": "agent_up_sync_or_agent_up_repair"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "same_range_block_until_range_is_normalized", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "unit_only_unmeasured", "observed_jj_command_count": null, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "unit_engine", "replay_status": "covered_unit", "evidence_refs": ["SCI-53 multi-commit fixture"]},
+      "receipt_invariants": ["single_commit_guard_for_python_fold", "no_range_rewrite_in_python", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_live_advances_again",
+      "slice": "conflict_authority",
+      "incident_family": "live head advances while conflict is being resolved",
+      "expected_decision": {
+        "decision_class": "materialized_conflict",
+        "expected_receipt_state": "retry_or_rematerialize_fresh_conflict",
+        "source_effect": "published_or_held_with_fresh_packet",
+        "live_effect": "revalidated_against_new_live",
+        "runtime_effect": "content_hash_gated",
+        "selected_workspace_state": "fresh_or_conflict_materialized",
+        "next_agent_up_action": "agent_up_sync"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["live_anchor_revalidate", "retry_publish", "rematerialize_packet"]},
+      "idempotency": {"repeat_behavior": "no_duplicate_fold_after_live_advance", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "measured_public_receipt_red_target", "observed_jj_command_count": null, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered_red_cost", "evidence_refs": ["SCI-53 A/B/C replay"]},
+      "receipt_invariants": ["live_anchor_revalidated", "fresh_conflict_if_needed", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "ready_for_shadow_cost_pressure"
+    },
+    {
+      "fixture_id": "sync_semantic_conflict_idempotent_repeat",
+      "slice": "conflict_authority",
+      "incident_family": "repeat sync after resolved or blocked semantic packet",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "repeat_idempotent",
+        "source_effect": "unchanged_or_already_published",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh_or_same_block",
+        "next_agent_up_action": "continue_or_same_agent_up_action"
+      },
+      "mutation_permission": {"state": "disallowed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "no_duplicate_fold_no_packet_resurrection", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "semantic_conflict_continuation", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 12, "latency_budget_ms": 1000},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 resolved-repeat replay"]},
+      "receipt_invariants": ["repeat_sync_idempotent", "no_source_loss", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_runtime_source_advanced_content_same",
+      "slice": "runtime_projection",
+      "incident_family": "source revision moved but staged runtime bytes unchanged",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "runtime_current_content_same",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "no_install",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "disallowed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "same_already_current_no_install", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "runtime_cutover", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 0, "latency_budget_ms": 500},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 source-advanced/content-same replay"]},
+      "receipt_invariants": ["runtime_content_hash_basis", "no_forced_install_on_source_only_move", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_runtime_install_bounce_already_current",
+      "slice": "runtime_projection",
+      "incident_family": "sync says install but verifier says current",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "already_current_after_verify",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "already_current",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "disallowed", "allowed_internal_actions": ["inline_verify_runtime"]},
+      "idempotency": {"repeat_behavior": "no_install_loop", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "runtime_cutover", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 0, "latency_budget_ms": 500},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 already-current apply-runtime replay"]},
+      "receipt_invariants": ["runtime_verify_clears_stale_blocker", "no_install_loop", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_runtime_content_changed_install_required",
+      "slice": "runtime_projection",
+      "incident_family": "runtime stage content changed",
+      "expected_decision": {
+        "decision_class": "clean_merge",
+        "expected_receipt_state": "runtime_install_applied_or_required",
+        "source_effect": "skipped_or_published",
+        "live_effect": "unchanged_or_advanced",
+        "runtime_effect": "install_applied_or_one_agent_up_install_action",
+        "selected_workspace_state": "fresh_after_install",
+        "next_agent_up_action": "agent_up_sync_or_install_runtime"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["apply_runtime_if_requested", "verify_runtime"]},
+      "idempotency": {"repeat_behavior": "already_current_after_install", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "runtime_cutover", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 0, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 content-changed apply-runtime replay"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "install_content_hash_gated", "one_agent_up_install_action", "runtime_verify_after_install"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_selected_truth_refresh_pending_clean",
+      "slice": "read_model_parity",
+      "incident_family": "current/probe/diagnose disagreement on clean refresh-pending worker",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "selected_truth_parity_or_typed_contradiction",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh_or_refresh_pending",
+        "next_agent_up_action": "agent_up_sync"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["refresh_selected_workspace"]},
+      "idempotency": {"repeat_behavior": "read_models_stay_in_parity", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "clean_refresh", "measurement_status": "integration_measured", "observed_jj_command_count": 27, "latency_budget_ms": 500},
+      "proof": {"proof_level": "integration_parity", "replay_status": "covered", "evidence_refs": ["SCI-53 selected truth parity fixture"]},
+      "receipt_invariants": ["selected_workspace_truth_explicit", "no_probe_diagnose_contradiction", "no_raw_jj_worker_guidance"],
+      "rust_graduation_status": "ready_for_shadow_cost_pressure"
+    },
+    {
+      "fixture_id": "sync_op_sibling_drift",
+      "slice": "read_model_parity",
+      "incident_family": "JJ operation-sibling drift",
+      "expected_decision": {
+        "decision_class": "blocked",
+        "expected_receipt_state": "typed_agent_up_repair_required",
+        "source_effect": "held",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "blocked_repair_required",
+        "next_agent_up_action": "agent_up_sync_or_agent_up_doctor_repair"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": ["classify_op_sibling", "offer_agent_up_repair"]},
+      "idempotency": {"repeat_behavior": "same_agent_up_repair_until_internal_repair_applied", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "recovery", "measurement_status": "structured_fixture_unmeasured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "receipt_contract", "replay_status": "partial", "evidence_refs": ["SCI-53 op-sibling drift notes"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "no_public_jj_op_integrate", "internal_jj_repair_command_not_agent_command", "fail_closed"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_board_manifest_projection_conflict",
+      "slice": "runtime_projection",
+      "incident_family": "claims/index/manifest projection conflict",
+      "expected_decision": {
+        "decision_class": "materialized_conflict",
+        "expected_receipt_state": "metadata_projection_conflict",
+        "source_effect": "held_or_materialized",
+        "live_effect": "unchanged_until_resolved",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "conflict_materialized",
+        "next_agent_up_action": "agent_up_sync"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": ["classify_metadata_projection", "materialize_projection_packet"]},
+      "idempotency": {"repeat_behavior": "same_projection_packet_until_resolution", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "metadata_projection", "measurement_status": "receipt_fixture_unmeasured", "observed_jj_command_count": null, "latency_budget_ms": 2000},
+      "proof": {"proof_level": "receipt_contract", "replay_status": "partial", "evidence_refs": ["SCI-53 projection-manifest receipt fixture"]},
+      "receipt_invariants": ["metadata_projection_authority_declared", "no_raw_jj_worker_guidance", "one_agent_up_next_action_when_not_green"],
+      "rust_graduation_status": "requires_more_replay"
+    },
+    {
+      "fixture_id": "sync_command_budget_clean_noop",
+      "slice": "cost",
+      "incident_family": "routine clean sync cost budget",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "cost_measured_clean_noop",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "disallowed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "green_noop_cost_recorded", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "clean_noop", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 0, "latency_budget_ms": 250},
+      "proof": {"proof_level": "live_receipt", "replay_status": "covered", "evidence_refs": ["SCI-53 command budget clean noop"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "agent_facing_raw_jj_budget_zero", "sync_cost_target_state_present", "internal_jj_count_recorded"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_command_budget_dirty_publish",
+      "slice": "cost",
+      "incident_family": "dirty publish cost budget",
+      "expected_decision": {
+        "decision_class": "clean_merge",
+        "expected_receipt_state": "cost_measured_dirty_publish",
+        "source_effect": "published",
+        "live_effect": "advanced",
+        "runtime_effect": "content_hash_gated",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue_or_install_runtime"
+      },
+      "mutation_permission": {"state": "allowed_internal", "allowed_internal_actions": ["commit_source", "publish_to_live"]},
+      "idempotency": {"repeat_behavior": "repeat_is_noop_or_already_published", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "dirty_publish", "measurement_status": "measured_public_receipt_red_target", "observed_jj_command_count": 84, "latency_budget_ms": 1000},
+      "proof": {"proof_level": "live_receipt", "replay_status": "covered_red_cost", "evidence_refs": ["SCI-53 dirty publish cost"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "agent_facing_raw_jj_budget_zero", "sync_cost_class_dirty_publish", "internal_jj_count_recorded"],
+      "rust_graduation_status": "ready_for_shadow_cost_pressure"
+    },
+    {
+      "fixture_id": "sync_cross_repo_managed_noop",
+      "slice": "cost",
+      "incident_family": "same one-touch flow in another managed repo",
+      "expected_decision": {
+        "decision_class": "noop",
+        "expected_receipt_state": "cross_repo_clean_noop",
+        "source_effect": "skipped",
+        "live_effect": "unchanged",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "fresh",
+        "next_agent_up_action": "continue"
+      },
+      "mutation_permission": {"state": "disallowed", "allowed_internal_actions": []},
+      "idempotency": {"repeat_behavior": "same_cross_repo_noop", "source_loss_allowed": false, "recovery_journal_required": false},
+      "cost": {"cost_class": "cross_repo_noop", "measurement_status": "measured_public_receipt", "observed_jj_command_count": 0, "latency_budget_ms": 250},
+      "proof": {"proof_level": "installed_runtime_replay", "replay_status": "covered", "evidence_refs": ["SCI-53 cross-repo managed noop canary"]},
+      "receipt_invariants": ["one_touch_global_repo_flow", "no_raw_jj_worker_guidance", "cost_class_present"],
+      "rust_graduation_status": "ready_for_shadow"
+    },
+    {
+      "fixture_id": "sync_crash_retry_idempotency_journal",
+      "slice": "read_model_parity",
+      "incident_family": "crash/retry journal and idempotency safety",
+      "expected_decision": {
+        "decision_class": "degraded",
+        "expected_receipt_state": "roll_forward_or_recoverable",
+        "source_effect": "recoverable_or_published",
+        "live_effect": "unchanged_until_replay",
+        "runtime_effect": "unchanged",
+        "selected_workspace_state": "recoverable",
+        "next_agent_up_action": "agent_up_sync_or_agent_up_repair"
+      },
+      "mutation_permission": {"state": "fail_closed", "allowed_internal_actions": ["read_recovery_journal", "roll_forward_if_safe"]},
+      "idempotency": {"repeat_behavior": "roll_forward_or_stop_with_recovery", "source_loss_allowed": false, "recovery_journal_required": true},
+      "cost": {"cost_class": "recovery", "measurement_status": "expected_decision_unmeasured", "observed_jj_command_count": null, "latency_budget_ms": 5000},
+      "proof": {"proof_level": "expected_decision", "replay_status": "accepted_blocker", "evidence_refs": ["SCR-63B recovery requirement"]},
+      "receipt_invariants": ["no_raw_jj_worker_guidance", "recovery_journal_required_before_mutation", "no_source_loss", "idempotency_rule_present"],
+      "rust_graduation_status": "requires_more_replay"
+    }
+  ]
+}

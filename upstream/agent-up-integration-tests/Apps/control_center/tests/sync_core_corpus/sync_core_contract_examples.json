@@ -1,0 +1,149 @@
+{
+  "schema_id": "control-center.agent-up.sync-core.contract-examples.v0.1",
+  "valid_request": {
+    "schema_id": "control-center.agent-up.sync-core.request.v0.1",
+    "schema_version": "v0.1",
+    "api_version": "agent-up-sync-core.v0.1",
+    "transaction_id": "sync-core-transaction-example",
+    "workspace_id": "workspace::control-center::agent-up-worker.example",
+    "repo_path": "/tmp/control-center",
+    "workspace_path": "/tmp/control-center.agent-up-worker.example",
+    "live_root_path": "/tmp/control-center",
+    "sync_group_id": "sync-control-center",
+    "requested_operation": "classify",
+    "python_context": {
+      "selected_workspace": {
+        "lane_id": "agent-up-worker.example",
+        "workspace_role": "worker",
+        "workspace_lifecycle": "disposable"
+      },
+      "sync_group": {
+        "peer_debt_state": "advisory"
+      },
+      "live_target": {
+        "repo_id": "control-center",
+        "live_rev": "live-rev-example"
+      },
+      "source_state": {
+        "workspace_rev": "workspace-rev-example",
+        "source_rev": "source-rev-example",
+        "authored_state": "clean"
+      },
+      "runtime_context": {
+        "runtime_cutover_required": false,
+        "runtime_stage_content_current": true
+      }
+    },
+    "adapter_profile": "stub",
+    "feature_flags": {
+      "rust_sync_core_enabled": false,
+      "rust_sync_core_shadow": true
+    },
+    "engine_mode_requested": "rust_shadow",
+    "mutation_allowed": false,
+    "deadline_ms": 5000,
+    "recovery_journal_path": "/tmp/agent-up-sync-core-journal.jsonl",
+    "correlation_id": "corr-sync-core-example",
+    "idempotency_key": "idem-sync-core-example"
+  },
+  "valid_response": {
+    "schema_id": "control-center.agent-up.sync-core.response.v0.1",
+    "schema_version": "v0.1",
+    "api_version": "agent-up-sync-core.v0.1",
+    "transaction_id": "sync-core-transaction-example",
+    "engine_mode_actual": "rust_shadow",
+    "authority_state": "rust_shadow_observed",
+    "decision_class": "noop",
+    "selected_workspace_state": "clean",
+    "source_provenance_state": "none_or_clean",
+    "live_root_state": "unchanged",
+    "conflict_authority": "none",
+    "runtime_relevance": "none",
+    "decision_confidence": 0.99,
+    "reason_codes": [
+      "stub_contract_noop",
+      "python_authority_preserved"
+    ],
+    "inspected_fact_classes": ["selected_workspace", "sync_group", "source_state", "live_target"],
+    "decision_drivers": ["mutation_disallowed", "stub_contract_noop"],
+    "provenance": {
+      "workspace_rev": "workspace-rev-example",
+      "source_rev": "source-rev-example",
+      "live_rev": "live-rev-example",
+      "sync_group_id": "sync-control-center"
+    },
+    "state_machine_trace": [
+      {"axis": "workspace", "state": "clean", "evidence_ref": "python_context.selected_workspace", "receipt_field": "selected_workspace_state"},
+      {"axis": "source", "state": "none_or_clean", "evidence_ref": "python_context.source_state", "receipt_field": "source_provenance_state"},
+      {"axis": "target_live", "state": "unchanged", "evidence_ref": "python_context.live_target", "receipt_field": "live_root_state"},
+      {"axis": "conflict", "state": "none", "evidence_ref": "conflict_scan_stub", "receipt_field": "conflict_authority"},
+      {"axis": "mutation", "state": "disallowed", "evidence_ref": "mutation_allowed_false", "receipt_field": "mutation_plan"},
+      {"axis": "output", "state": "noop", "evidence_ref": "decision_class", "receipt_field": "decision_class"}
+    ],
+    "conflict_packet_candidate": {},
+    "mutation_plan": {},
+    "journal_record": {},
+    "next_agent_up_action": {
+      "action": "continue",
+      "command": null
+    },
+    "python_fallback_reason": null,
+    "parity_state": "not_compared",
+    "latency_ms": 0.0,
+    "graph_metrics": {
+      "kernel_call_count": 1,
+      "repo_lock_time_ms": 0.0,
+      "graph_nodes_scanned": 0,
+      "conflict_count": 0
+    },
+    "degraded_reason": "not_applicable",
+    "feedback_observation": {
+      "state": "not_observed"
+    },
+    "fallback": {
+      "python_fallback_available": true,
+      "fallback_reason": null,
+      "fallback_command": "agent-up sync --brief --json"
+    },
+    "telemetry": {
+      "kernel_call_count": 1,
+      "latency_ms": 0.0,
+      "repo_lock_time_ms": 0.0
+    },
+    "degraded": {
+      "state": false,
+      "reason": null
+    },
+    "errors": [],
+    "adapter_identity": {
+      "adapter_profile": "stub",
+      "adapter_version": "stub.v0.1"
+    }
+  },
+  "negative_cases": {
+    "missing_provenance": {
+      "remove_response_key": "provenance"
+    },
+    "ambiguous_authority": {
+      "response_overrides": {
+        "authority_state": "unknown"
+      }
+    },
+    "shadow_mutation": {
+      "response_overrides": {
+        "mutation_plan": {
+          "operation": "publish"
+        }
+      }
+    },
+    "multiple_kernel_calls": {
+      "response_overrides": {
+        "telemetry": {
+          "kernel_call_count": 2,
+          "latency_ms": 0.0,
+          "repo_lock_time_ms": 0.0
+        }
+      }
+    }
+  }
+}

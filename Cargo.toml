@@ -1,0 +1,30 @@
+[package]
+name = "agent-up-sync-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+publish = false
+description = "Agent-Up sync convergence kernel scaffold with read, guarded mutation, and transaction candidate modes"
+
+[lib]
+name = "agent_up_sync_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent-up-sync-core"
+path = "src/bin/agent-up-sync-core.rs"
+
+[[bench]]
+name = "sync_transaction_classes"
+path = "benches/sync_transaction_classes.rs"
+harness = false
+
+[features]
+default = ["cli-jj-adapter"]
+cli-jj-adapter = []
+jj-lib-adapter = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
