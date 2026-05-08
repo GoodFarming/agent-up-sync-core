@@ -1,18 +1,18 @@
 {
   "export_target": "/home/adam/publish/agent-up-sync-core",
-  "generated_at_utc": "2026-05-08T04:34:23Z",
+  "generated_at_utc": "2026-05-08T09:21:28Z",
   "git": {
     "branch": null,
-    "head": "cf3b3a12c043"
+    "head": "493da27f2332"
   },
   "jj": {
-    "published_parent_change": "otskstzpsmxz",
-    "published_parent_commit": "cf3b3a12c043",
-    "published_parent_description": "Use prebuilt JJ in sync-core mirror CI",
-    "status": "The working copy has no changes.\nWorking copy  (@) : kstvkozu ec789e6f (empty) (no description set)\nParent commit (@-): otskstzp cf3b3a12 rolling/control-center | Use prebuilt JJ in sync-core mirror CI",
+    "published_parent_change": "lrrzytpnvpsy",
+    "published_parent_commit": "493da27f2332",
+    "published_parent_description": "Update OTS-66 closeout evidence for runtime and VSIX disk install",
+    "status": "The working copy has no changes.\nWorking copy  (@) : ruotxpnt b0ea6d07 (empty) (no description set)\nParent commit (@-): lrrzytpn 493da27f rolling/control-center | Update OTS-66 closeout evidence for runtime and VSIX disk install",
     "status_ok": true,
-    "workspace_change": "kstvkozuykqk",
-    "workspace_commit": "ec789e6f8421",
+    "workspace_change": "ruotxpntzspk",
+    "workspace_commit": "b0ea6d079057",
     "workspace_description": null
   },
   "runtime": {
@@ -29,7 +29,7 @@
     "installed_runtime_version": null,
     "returncode": 0,
     "runtime_current": null,
-    "summary": "runtime current: version=20260508T042206Z revision=d3b953738193"
+    "summary": "runtime current: version=20260508T091014Z revision=63f6a6259353"
   },
   "schema_id": "control-center.agent-up.sync-core.publish-source.v0.1",
   "source_authority": "control-center-jj-workspace",

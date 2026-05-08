@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,29 @@ def _rust_binary() -> Path:
     binary = ROOT / "target/debug/agent-up-sync-core"
     assert binary.exists()
     return binary
+
+
+@lru_cache(maxsize=1)
+def _rust_binary_jj_lib() -> Path:
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "-p",
+            "agent-up-sync-core",
+            "--no-default-features",
+            "--features",
+            "jj-lib-adapter",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    binary = ROOT / "target/debug/agent-up-sync-core"
+    copied = ROOT / "target/debug/agent-up-sync-core-jj-lib-perf-test"
+    shutil.copy2(binary, copied)
+    copied.chmod(0o755)
+    assert copied.exists()
+    return copied
 
 
 def _init_jj_repo(tmp_path: Path) -> Path:
@@ -83,7 +107,7 @@ def _context(*, conflict: bool = False) -> dict[str, Any]:
     return context
 
 
-def _request(repo: Path, *, conflict: bool = False) -> dict[str, Any]:
+def _request(repo: Path, *, conflict: bool = False, adapter_profile: str = "cli-jj") -> dict[str, Any]:
     return build_sync_core_read_authority_request(
         workspace_id="workspace::control-center::agent-up-worker.sync",
         workspace_path=str(repo),
@@ -91,6 +115,7 @@ def _request(repo: Path, *, conflict: bool = False) -> dict[str, Any]:
         live_root_path=str(repo),
         sync_group_id="sync-control-center",
         python_context=_context(conflict=conflict),
+        adapter_profile=adapter_profile,
         transaction_id="sync-core-performance",
         correlation_id="corr-sync-core-performance",
         idempotency_key="idem-sync-core-performance",
@@ -163,6 +188,8 @@ def test_performance_budget_is_projected_to_sync_receipt_metadata(tmp_path: Path
 
 def test_code_intelligence_refresh_is_queued_not_run_on_sync_hot_path(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("AGENT_UP_CODE_INTELLIGENCE_SYNC_REFRESH_RUN_PROVIDER_PROCESSES", raising=False)
+    monkeypatch.delenv("AGENT_UP_CODE_INTELLIGENCE_SYNC_REFRESH_PROVIDERS", raising=False)
+    monkeypatch.delenv("AGENT_UP_CODE_INTELLIGENCE_SYNC_BACKGROUND_PROVIDERS", raising=False)
     observed: dict[str, Any] = {}
     background_observed: dict[str, Any] = {}
 
@@ -200,4 +227,56 @@ def test_code_intelligence_refresh_is_queued_not_run_on_sync_hot_path(monkeypatc
     assert refresh["queue"]["provider_process_execution_requested"] is False
     assert refresh["queue"]["queued_heavy_jobs"] == 1
     assert background_observed["root_head"] == "root-head-2"
+    assert background_observed["providers"] == ("tldr",)
     assert refresh["background_refresh"]["state"] == "started"
+
+
+def test_jj_lib_read_orientation_removes_adapter_subprocess_cost(tmp_path: Path) -> None:
+    repo = _init_jj_repo(tmp_path)
+    cli_response = invoke_sync_core_once(
+        _request(repo, adapter_profile="cli-jj"),
+        runner=RustSyncCoreRunner(_rust_binary()),
+    )
+    jj_lib_response = invoke_sync_core_once(
+        _request(repo, adapter_profile="jj-lib"),
+        runner=RustSyncCoreRunner(_rust_binary_jj_lib()),
+    )
+    cli_identity = cli_response["adapter_identity"]
+    jj_lib_identity = jj_lib_response["adapter_identity"]
+
+    assert cli_response["decision_class"] == jj_lib_response["decision_class"] == "noop"
+    assert cli_identity["adapter_subprocess_count"] > jj_lib_identity["adapter_subprocess_count"]
+    assert cli_identity["adapter_jj_command_count"] > jj_lib_identity["adapter_jj_command_count"]
+    assert jj_lib_identity["adapter_subprocess_count"] == 0
+    assert jj_lib_identity["adapter_jj_command_count"] == 0
+    assert jj_lib_identity["repo_snapshot_count"] == 1
+    assert _performance_budget(jj_lib_response)["one_kernel_call"] is True
+
+
+def test_jj_lib_adapter_cost_fields_project_to_sync_receipt_metadata(tmp_path: Path) -> None:
+    repo = _init_jj_repo(tmp_path)
+    response = invoke_sync_core_once(
+        _request(repo, conflict=True, adapter_profile="jj-lib"),
+        runner=RustSyncCoreRunner(_rust_binary_jj_lib()),
+    )
+    updated = attach_read_authority_metadata_to_receipt(
+        {
+            "outcome": "publish_conflict",
+            "exit_phase": "publish_conflict",
+            "workspace_final_state": "conflict_materialized",
+            "workspace_sync_state": "publish_conflict",
+            "conflict_authority": "semantic_resolution_required",
+            "blocking": True,
+            "live_head_moved": True,
+        },
+        response,
+    )
+    metadata = updated["sync_core_read_authority"]
+    metrics = updated["sync_runtime_metrics"]
+
+    assert metadata["adapter_identity"]["adapter_profile"] == "jj-lib"
+    assert metadata["adapter_identity"]["adapter_subprocess_count"] == 0
+    assert metadata["adapter_identity"]["adapter_jj_command_count"] == 0
+    assert metrics["sync_core_read_authority_adapter_profile"] == "jj-lib"
+    assert metrics["sync_core_read_authority_adapter_subprocess_count"] == 0
+    assert metrics["sync_core_read_authority_adapter_jj_command_count"] == 0

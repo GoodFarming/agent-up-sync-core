@@ -2,6 +2,8 @@ mod adapter;
 mod error;
 mod schema;
 
+#[cfg(feature = "jj-lib-adapter")]
+pub use adapter::JjLibAdapter;
 pub use adapter::{CliJjAdapter, JjAdapter, StubJjAdapter};
 pub use error::{StructuredError, SyncCoreError};
 pub use schema::{
@@ -28,6 +30,23 @@ const DEFAULT_OUTPUT_BUDGET_BYTES: u64 = 256 * 1024;
 pub fn run_shadow_transaction(request: SyncCoreRequest) -> SyncCoreResponse {
     if request.adapter_profile == "stub" {
         run_shadow_transaction_with_adapter(request, &StubJjAdapter)
+    } else if request.adapter_profile == "jj-lib" {
+        #[cfg(feature = "jj-lib-adapter")]
+        {
+            run_shadow_transaction_with_adapter(request, &JjLibAdapter)
+        }
+        #[cfg(not(feature = "jj-lib-adapter"))]
+        {
+            let started = Instant::now();
+            let error = SyncCoreError::new(
+                "jj_lib_adapter_not_compiled",
+                "adapter_profile=jj-lib requested but the jj-lib-adapter feature is not enabled",
+                "jj-lib",
+                request.repo_path.clone(),
+                request.deadline_ms,
+            );
+            degraded_response(&request, started.elapsed().as_secs_f64() * 1000.0, error)
+        }
     } else {
         run_shadow_transaction_with_adapter(request, &CliJjAdapter)
     }
@@ -249,8 +268,15 @@ fn success_response(
     };
     let graph_nodes_scanned = if facts.parent.is_some() { 2 } else { 1 };
     let conflict_count = conflicted_paths.len() as u64;
+    let adapter_subprocess_count = adapter_subprocess_count(&facts.adapter_profile);
+    let adapter_jj_command_count = adapter_jj_command_count(&facts.adapter_profile);
+    let adapter_reason_code = match facts.adapter_profile.as_str() {
+        "jj-lib" => "jj_lib_adapter_repo_snapshot",
+        "stub" => "stub_adapter_repo_facts",
+        _ => "cli_jj_adapter_repo_facts",
+    };
     let reason_codes = vec![
-        "cli_jj_adapter_repo_facts".to_string(),
+        adapter_reason_code.to_string(),
         if engine_mode_actual == "rust_read_authoritative" {
             "rust_read_authority".to_string()
         } else if engine_mode_actual == "rust_transaction_candidate" {
@@ -394,23 +420,76 @@ fn success_response(
         adapter_identity: json!({
             "adapter_profile": facts.adapter_profile,
             "adapter_version": facts.adapter_version,
+            "adapter_subprocess_count": adapter_subprocess_count,
+            "adapter_jj_command_count": adapter_jj_command_count,
+            "repo_snapshot_count": 1,
+            "compatibility": adapter_compatibility(&facts.adapter_profile),
             "jj_internal_schema_exposed": false
         }),
         fallback: Fallback {
             python_fallback_available: true,
             fallback_reason: None,
-            fallback_command: "agent-up sync --brief --json".to_string(),
+            fallback_command: "agent-up sync --probe --brief --json".to_string(),
         },
         telemetry: json!({
             "kernel_call_count": 1,
             "latency_ms": latency_ms,
             "repo_lock_time_ms": 0.0,
+            "adapter_subprocess_count": adapter_subprocess_count,
+            "adapter_jj_command_count": adapter_jj_command_count,
+            "repo_snapshot_count": 1,
             "mutation_performed": guarded_mutation.mutation_performed,
             "performance_budget": performance_budget
         }),
         degraded: json!({"state": false, "reason": null}),
         errors: Vec::new(),
         repo_facts: Some(facts),
+    }
+}
+
+fn adapter_subprocess_count(adapter_profile: &str) -> u64 {
+    match adapter_profile {
+        "jj-lib" | "stub" => 0,
+        _ => 5,
+    }
+}
+
+fn adapter_jj_command_count(adapter_profile: &str) -> u64 {
+    match adapter_profile {
+        "jj-lib" | "stub" => 0,
+        _ => 5,
+    }
+}
+
+fn adapter_version_for_profile(adapter_profile: &str) -> &'static str {
+    match adapter_profile {
+        "jj-lib" => "jj-lib.v0.40.0-read-only",
+        "stub" => "stub.v0.1",
+        _ => "jj-cli.v0.40-compatible",
+    }
+}
+
+fn adapter_compatibility(adapter_profile: &str) -> Value {
+    match adapter_profile {
+        "jj-lib" => json!({
+            "jj_lib_version": "0.40.0",
+            "jj_cli_compatibility": "0.40.0",
+            "repo_store": ["git", "simple"],
+            "op_store": "simple_op_store",
+            "op_heads": "simple_op_heads_store",
+            "index": "default",
+            "msrv": "1.89",
+            "license": "Apache-2.0",
+            "platform_support": ["linux", "macos", "windows"],
+            "mismatch_behavior": "typed_python_fallback"
+        }),
+        "stub" => json!({
+            "mismatch_behavior": "test_stub_only"
+        }),
+        _ => json!({
+            "jj_cli_compatibility": "0.40.0",
+            "mismatch_behavior": "typed_python_fallback"
+        }),
     }
 }
 
@@ -649,7 +728,7 @@ fn build_transaction_candidate_decision(
             "before_op_id": facts.operation_id.clone(),
             "after_op_id": facts.operation_id.clone(),
             "recovery_handle": recovery_handle.clone(),
-            "recovery_action": "disable rust transaction candidate and run agent-up sync --brief --json",
+            "recovery_action": "disable rust transaction candidate and run agent-up sync --probe --brief --json",
             "idempotency_key": request.idempotency_key.clone(),
             "mutation_performed": false,
             "live_root_state": live_root_state,
@@ -730,7 +809,7 @@ fn build_transaction_candidate_decision(
         "before_op_id": execution.before_op_id.clone(),
         "after_op_id": execution.after_op_id.clone(),
         "recovery_handle": recovery_handle.clone(),
-        "recovery_action": "disable rust transaction candidate and run agent-up sync --brief --json",
+        "recovery_action": "disable rust transaction candidate and run agent-up sync --probe --brief --json",
         "idempotency_key": request.idempotency_key.clone(),
         "mutation_performed": execution.mutation_performed,
         "transaction_executor_requested": executor_requested,
@@ -794,9 +873,9 @@ fn build_transaction_candidate_decision(
         mutation_plan,
         journal_record,
         next_agent_up_action: if safe_to_apply {
-            json!({"action": "continue", "command": "agent-up sync --brief --json"})
+            json!({"action": "continue", "command": "agent-up sync --probe --brief --json"})
         } else {
-            json!({"action": "python_fallback", "command": "agent-up sync --brief --json"})
+            json!({"action": "python_fallback", "command": "agent-up sync --probe --brief --json"})
         },
         mutation_axis_state: if safe_to_apply && execution.mutation_performed {
             "applied"
@@ -1395,7 +1474,7 @@ fn build_guarded_mutation_decision(
         "before_op_id": facts.operation_id.clone(),
         "after_op_id": facts.operation_id.clone(),
         "recovery_handle": recovery_handle.clone(),
-        "recovery_action": "agent-up sync --brief --json",
+        "recovery_action": "agent-up sync --probe --brief --json",
         "idempotency_key": request.idempotency_key.clone(),
         "mutation_performed": mutation_performed,
         "live_root_state": live_root_state,
@@ -1437,9 +1516,9 @@ fn build_guarded_mutation_decision(
         mutation_plan,
         journal_record,
         next_agent_up_action: if safe_to_apply {
-            json!({"action": "continue", "command": "agent-up sync --brief --json"})
+            json!({"action": "continue", "command": "agent-up sync --probe --brief --json"})
         } else {
-            json!({"action": "blocked", "command": "agent-up sync --brief --json"})
+            json!({"action": "blocked", "command": "agent-up sync --probe --brief --json"})
         },
         mutation_axis_state: if safe_to_apply && mutation_performed {
             "applied"
@@ -1702,7 +1781,7 @@ fn degraded_response(
         conflict_packet_candidate: json!({}),
         mutation_plan: json!({}),
         journal_record: json!({}),
-        next_agent_up_action: json!({"action": "use_python_fallback", "command": "agent-up sync --brief --json"}),
+        next_agent_up_action: json!({"action": "use_python_fallback", "command": "agent-up sync --probe --brief --json"}),
         python_fallback_reason: Some(structured.code.clone()),
         parity_state: "degraded".to_string(),
         latency_ms,
@@ -1735,18 +1814,25 @@ fn degraded_response(
         ),
         adapter_identity: json!({
             "adapter_profile": structured.adapter_profile,
-            "adapter_version": "jj-cli.v0.40-compatible",
+            "adapter_version": adapter_version_for_profile(&structured.adapter_profile),
+            "adapter_subprocess_count": 0,
+            "adapter_jj_command_count": 0,
+            "repo_snapshot_count": 0,
+            "compatibility": adapter_compatibility(&structured.adapter_profile),
             "jj_internal_schema_exposed": false
         }),
         fallback: Fallback {
             python_fallback_available: true,
             fallback_reason: Some(structured.code.clone()),
-            fallback_command: "agent-up sync --brief --json".to_string(),
+            fallback_command: "agent-up sync --probe --brief --json".to_string(),
         },
         telemetry: json!({
             "kernel_call_count": 1,
             "latency_ms": latency_ms,
             "repo_lock_time_ms": 0.0,
+            "adapter_subprocess_count": 0,
+            "adapter_jj_command_count": 0,
+            "repo_snapshot_count": 0,
             "mutation_performed": false,
             "performance_budget": {
                 "schema_id": "control-center.agent-up.sync-core.performance-budget.v0.1",

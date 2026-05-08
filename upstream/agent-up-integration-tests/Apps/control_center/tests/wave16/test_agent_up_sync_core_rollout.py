@@ -30,7 +30,7 @@ def _canary_receipt(**overrides: object) -> dict[str, object]:
             "engine_mode_actual": "rust_read_authoritative",
             "fallback": {
                 "python_fallback_available": True,
-                "fallback_command": "agent-up sync --brief --json",
+                "fallback_command": "agent-up sync --brief --json --include-receipts",
             },
             "performance_budget": {
                 "algorithmic_budget_class": "clean_noop",
@@ -87,7 +87,7 @@ def test_full_installed_canary_matrix_and_transaction_authority_can_reach_deploy
             "engine_mode_actual": "rust_transaction_candidate",
             "fallback": {
                 "python_fallback_available": True,
-                "fallback_command": "agent-up sync --brief --json",
+                "fallback_command": "agent-up sync --brief --json --include-receipts",
             },
             "performance_budget": {
                 "algorithmic_budget_class": "semantic_materialized_conflict_continuation",

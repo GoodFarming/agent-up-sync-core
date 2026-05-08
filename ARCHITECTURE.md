@@ -12,9 +12,18 @@ policy.
 
 ## Adapter Isolation
 
-JJ access is hidden behind `JjAdapter`. The current adapter can use the JJ CLI;
-future `jj-lib` support must stay behind the same trait. Public request/response
-schemas must not expose JJ internal types.
+JJ access is hidden behind `JjAdapter`.
+
+- `CliJjAdapter` preserves the subprocess fallback path.
+- `JjLibAdapter` is read-only and opens one in-process JJ workspace/repo
+  snapshot per sync-core request.
+- Public request/response schemas expose adapter identity, compatibility,
+  counters, provenance, and degraded/fallback state, but not JJ internal types.
+- `adapter_profile=jj-lib` must report `adapter_subprocess_count=0` and
+  `adapter_jj_command_count=0` for read orientation.
+- Unsupported repo format, corrupt working copy, missing operation state, and
+  conflict states that cannot be represented as a materialized packet return a
+  typed degraded response with Python fallback.
 
 ## Authority Progression
 

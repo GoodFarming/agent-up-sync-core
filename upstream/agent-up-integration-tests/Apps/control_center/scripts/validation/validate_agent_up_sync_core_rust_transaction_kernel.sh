@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
   -h|--help)
       cat <<'EOF'
 Usage:
-  bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh [--gate contract-schema|contract-stub|python-corpus|python-corpus-no-rust|rust-scaffold|rust-shadow-classifier|rust-read-authority|rust-performance|rust-performance-clean|rust-performance-conflict|guarded-mutation|rust-guarded-mutation|rust-guarded-mutation-fold|transaction-candidate|rust-transaction-candidate|rollout|rust-rollout-canary|deployment-readiness|rust-deployment-readiness|open-source-readiness|all]
+  bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh [--gate contract-schema|contract-stub|python-corpus|python-corpus-no-rust|rust-scaffold|rust-shadow-classifier|rust-read-authority|jj-lib-read-adapter|rust-performance|rust-performance-clean|rust-performance-conflict|guarded-mutation|rust-guarded-mutation|rust-guarded-mutation-fold|transaction-candidate|rust-transaction-candidate|rollout|rust-rollout-canary|deployment-readiness|rust-deployment-readiness|open-source-readiness|all]
 EOF
       exit 0
       ;;
@@ -99,6 +99,19 @@ run_rust_read_authority() {
   run_rust_shadow_classifier
   PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "${pytest_cmd[@]}" \
     Apps/control_center/tests/wave16/test_agent_up_sync_core_read_authority.py
+}
+
+run_jj_lib_read_adapter() {
+  run_static
+  cargo check -p agent-up-sync-core --no-default-features --features jj-lib-adapter
+  cargo test -p agent-up-sync-core --no-default-features --features jj-lib-adapter
+  cargo clippy -p agent-up-sync-core --all-targets --no-default-features --features jj-lib-adapter -- -D warnings
+  PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "${pytest_cmd[@]}" \
+    Apps/control_center/tests/wave16/test_agent_up_sync_core_read_authority.py \
+    -k "jj_lib or read_authority_fallback"
+  PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "${pytest_cmd[@]}" \
+    Apps/control_center/tests/wave16/test_agent_up_sync_core_performance.py \
+    -k "jj_lib"
 }
 
 run_rust_performance_clean() {
@@ -202,7 +215,7 @@ missing = [name for name in required if not (root / name).exists()]
 if missing:
     raise SystemExit(f"missing sync-core open-source readiness files: {missing}")
 cargo = (root / "Cargo.toml").read_text()
-for marker in ['version = "0.1.0"', 'rust-version = "1.75"', 'license = "Apache-2.0"']:
+for marker in ['version = "0.1.0"', 'rust-version = "1.89"', 'license = "Apache-2.0"', 'jj-lib = { version = "=0.40.0"']:
     if marker not in cargo:
         raise SystemExit(f"Cargo.toml missing {marker}")
 PY
@@ -252,6 +265,9 @@ case "$gate" in
     ;;
   rust-read-authority|read-authority)
     run_rust_read_authority
+    ;;
+  jj-lib-read-adapter)
+    run_jj_lib_read_adapter
     ;;
   rust-performance-clean)
     run_rust_performance_clean

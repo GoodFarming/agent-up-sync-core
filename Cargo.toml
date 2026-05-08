@@ -2,7 +2,7 @@
 name = "agent-up-sync-core"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.89"
 license = "Apache-2.0"
 publish = false
 description = "Agent-Up sync convergence kernel scaffold with read, guarded mutation, and transaction candidate modes"
@@ -23,8 +23,10 @@ harness = false
 [features]
 default = ["cli-jj-adapter"]
 cli-jj-adapter = []
-jj-lib-adapter = []
+jj-lib-adapter = ["dep:jj-lib", "dep:pollster"]
 
 [dependencies]
+jj-lib = { version = "=0.40.0", optional = true }
+pollster = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

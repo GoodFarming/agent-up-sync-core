@@ -18,6 +18,9 @@ provenance, conflict classification, and journaled safe mutation planning.
   reachability, and idempotency replay state;
 - Python fallback is required in every mode;
 - no JJ internals are exposed in the public schema.
+- `adapter_profile=jj-lib` is read-only: it uses `jj-lib 0.40.0` to open one
+  in-process workspace/repo snapshot and must report zero adapter subprocesses;
+  `CliJjAdapter` and Python fallback remain available and receipt-visible.
 
 ## API Shape
 
@@ -44,8 +47,8 @@ and idempotency key.
 
 ## Validation
 
-Prerequisites: Rust 1.75+ and `jj` 0.40.0+ on `PATH` for CLI adapter parity
-tests.
+Prerequisites: Rust 1.89+ and `jj` 0.40.0 on `PATH` for CLI adapter parity
+tests. The `jj-lib` adapter is pinned to `jj-lib = 0.40.0`.
 
 Standalone crate validation:
 
@@ -60,6 +63,7 @@ Control Center upstream validation:
 
 ```bash
 bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate rollout
+bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate jj-lib-read-adapter
 ```
 
 See `ARCHITECTURE.md`, `SCHEMAS.md`, `SAFETY.md`, `EXAMPLES.md`,

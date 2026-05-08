@@ -415,7 +415,7 @@ def test_multi_worker_replay_materializes_semantic_conflict(tmp_path: Path) -> N
     assert response["selected_workspace_state"] == "conflicted"
     assert response["conflict_authority"] == "semantic_resolution_required"
     assert response["conflict_packet_candidate"]["conflicted_paths"] == ["src/router.py"]
-    assert response["next_agent_up_action"]["command"] == "agent-up sync --brief --json"
+    assert response["next_agent_up_action"]["command"] == "agent-up sync --probe --brief --json"
     assert response["fallback"]["python_fallback_available"] is True
 
 
@@ -654,7 +654,9 @@ def test_managed_ab_sync_replay_resolves_conflict_and_publishes_without_raw_jj_g
     )
     assert conflicted_b.returncode == 11
     assert conflicted_b.payload["source_publish_outcome"] == "publish_conflict"
-    assert conflicted_b.payload["continue_command"] == f"agent-up sync --workspace-id {handle_b.workspace_id} --brief --json"
+    assert conflicted_b.payload["continue_command"] == (
+        f"agent-up sync --workspace-id {handle_b.workspace_id} -m \"<resolution summary>\" --brief --json"
+    )
     assert conflicted_b.payload["next_exact_command"] is None
     _assert_no_raw_jj_guidance(conflicted_b.payload)
 
@@ -742,7 +744,7 @@ def test_python_fallback_is_receipt_visible(tmp_path: Path) -> None:
     assert response["authority_state"] == "python_fallback"
     assert response["fallback"]["python_fallback_available"] is True
     assert response["python_fallback_reason"].startswith("rust_runner_failed:")
-    assert response["next_agent_up_action"]["command"] == "agent-up sync --brief --json"
+    assert response["next_agent_up_action"]["command"] == "agent-up sync --probe --brief --json"
 
 
 def test_transaction_candidate_request_requires_mutation_allowed(tmp_path: Path) -> None:
