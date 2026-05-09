@@ -48,6 +48,9 @@ impl JjAdapter for StubJjAdapter {
             operation_id: "stub-operation".to_string(),
             conflict_count: 0,
             conflicted_paths: Vec::new(),
+            working_copy_dirty: false,
+            changed_path_count: 0,
+            changed_paths: Vec::new(),
             adapter_profile: "stub".to_string(),
             adapter_version: "stub.v0.1".to_string(),
             mutation_performed: false,
@@ -133,6 +136,7 @@ impl CliJjAdapter {
             .arg("--repository")
             .arg(repo_path)
             .args(["resolve", "--list", "--no-pager"])
+            .current_dir(&request.workspace_path)
             .output()
             .map_err(|exc| {
                 SyncCoreError::new(
@@ -148,7 +152,7 @@ impl CliJjAdapter {
                 .lines()
                 .map(str::trim)
                 .filter(|line| !line.is_empty())
-                .map(str::to_string)
+                .filter_map(|line| line.split_whitespace().next().map(str::to_string))
                 .collect();
             return Ok(paths);
         }
@@ -163,6 +167,34 @@ impl CliJjAdapter {
             repo_path,
             request.deadline_ms,
         ))
+    }
+
+    fn changed_paths(
+        repo_path: &str,
+        request: &SyncCoreRequest,
+    ) -> Result<Vec<String>, SyncCoreError> {
+        let output = Self::run_jj(repo_path, &["status", "--no-pager"], request)?;
+        let paths = output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .filter(|line| !line.starts_with("The working copy has no changes."))
+            .filter_map(|line| {
+                let bytes = line.as_bytes();
+                if bytes.len() < 3 || !bytes[1].is_ascii_whitespace() {
+                    return None;
+                }
+                match bytes[0] {
+                    b'A' | b'C' | b'D' | b'M' | b'R' | b'?' | b'!' => line
+                        .get(2..)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string),
+                    _ => None,
+                }
+            })
+            .collect();
+        Ok(paths)
     }
 }
 
@@ -199,6 +231,7 @@ impl JjAdapter for CliJjAdapter {
             .unwrap_or("unknown-operation")
             .to_string();
         let conflicted_paths = Self::conflict_paths(repo_path, request)?;
+        let changed_paths = Self::changed_paths(repo_path, request)?;
         Ok(RepoFacts {
             repo_path: request.repo_path.clone(),
             workspace_path: request.workspace_path.clone(),
@@ -208,6 +241,9 @@ impl JjAdapter for CliJjAdapter {
             operation_id,
             conflict_count: conflicted_paths.len(),
             conflicted_paths,
+            working_copy_dirty: !changed_paths.is_empty(),
+            changed_path_count: changed_paths.len(),
+            changed_paths,
             adapter_profile: "cli-jj".to_string(),
             adapter_version: "jj-cli.v0.40-compatible".to_string(),
             mutation_performed: false,
@@ -410,6 +446,9 @@ impl JjAdapter for JjLibAdapter {
             operation_id: Self::short_hex(repo.op_id()),
             conflict_count: conflicted_paths.len(),
             conflicted_paths,
+            working_copy_dirty: false,
+            changed_path_count: 0,
+            changed_paths: Vec::new(),
             adapter_profile: "jj-lib".to_string(),
             adapter_version: "jj-lib.v0.40.0-read-only".to_string(),
             mutation_performed: false,

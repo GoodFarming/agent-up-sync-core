@@ -1,18 +1,18 @@
 {
   "export_target": "/home/adam/publish/agent-up-jj-sync-core",
-  "generated_at_utc": "2026-05-08T09:31:16Z",
+  "generated_at_utc": "2026-05-09T22:07:44Z",
   "git": {
     "branch": null,
-    "head": "865d5a471148"
+    "head": "08a0a0eca671"
   },
   "jj": {
-    "published_parent_change": "xxuqtlkovtvl",
-    "published_parent_commit": "865d5a471148",
-    "published_parent_description": "Brand public sync-core as Agent-Up JJ Sync Core",
-    "status": "The working copy has no changes.\nWorking copy  (@) : ruotxpnt fe5bf6de (empty) (no description set)\nParent commit (@-): xxuqtlko 865d5a47 rolling/control-center | Brand public sync-core as Agent-Up JJ Sync Core",
+    "published_parent_change": "zqwsrxqvlmoq",
+    "published_parent_commit": "08a0a0eca671",
+    "published_parent_description": "Activate Rust transaction authority as default candidate",
+    "status": "The working copy has no changes.\nWorking copy  (@) : swvvuzyk 8f664e10 (empty) (no description set)\nParent commit (@-): zqwsrxqv 08a0a0ec rolling/control-center | Activate Rust transaction authority as default candidate",
     "status_ok": true,
-    "workspace_change": "ruotxpntzspk",
-    "workspace_commit": "fe5bf6de6b0f",
+    "workspace_change": "swvvuzykxqxk",
+    "workspace_commit": "8f664e103db1",
     "workspace_description": null
   },
   "runtime": {
@@ -29,7 +29,7 @@
     "installed_runtime_version": null,
     "returncode": 0,
     "runtime_current": null,
-    "summary": "runtime current: version=20260508T091014Z revision=63f6a6259353"
+    "summary": "runtime current: version=20260509T220110Z revision=08a0a0eca671"
   },
   "schema_id": "control-center.agent-up.sync-core.publish-source.v0.1",
   "source_authority": "control-center-jj-workspace",

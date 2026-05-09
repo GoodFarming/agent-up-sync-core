@@ -109,10 +109,12 @@ fn success_response(
         .pointer("/source_state/authored_state")
         .and_then(|value| value.as_str())
         .unwrap_or("clean");
-    let inferred_source_provenance_state = if matches!(
-        authored_state,
-        "authored" | "dirty" | "local_commit" | "prepared" | "protected"
-    ) {
+    let inferred_source_provenance_state = if facts.working_copy_dirty
+        || facts.changed_path_count > 0
+        || matches!(
+            authored_state,
+            "authored" | "dirty" | "local_commit" | "prepared" | "protected"
+        ) {
         "authored"
     } else {
         "none_or_clean"
@@ -294,6 +296,7 @@ fn success_response(
         "parent_head".to_string(),
         "operation_id".to_string(),
         "conflict_summary".to_string(),
+        "working_copy_status".to_string(),
         "python_context.source_state".to_string(),
         "python_context.runtime_context".to_string(),
         "python_context.conflict_context".to_string(),
@@ -423,6 +426,8 @@ fn success_response(
             "adapter_subprocess_count": adapter_subprocess_count,
             "adapter_jj_command_count": adapter_jj_command_count,
             "repo_snapshot_count": 1,
+            "working_copy_dirty": facts.working_copy_dirty,
+            "changed_path_count": facts.changed_path_count,
             "compatibility": adapter_compatibility(&facts.adapter_profile),
             "jj_internal_schema_exposed": false
         }),
@@ -438,6 +443,8 @@ fn success_response(
             "adapter_subprocess_count": adapter_subprocess_count,
             "adapter_jj_command_count": adapter_jj_command_count,
             "repo_snapshot_count": 1,
+            "working_copy_dirty": facts.working_copy_dirty,
+            "changed_path_count": facts.changed_path_count,
             "mutation_performed": guarded_mutation.mutation_performed,
             "performance_budget": performance_budget
         }),
@@ -450,14 +457,14 @@ fn success_response(
 fn adapter_subprocess_count(adapter_profile: &str) -> u64 {
     match adapter_profile {
         "jj-lib" | "stub" => 0,
-        _ => 5,
+        _ => 6,
     }
 }
 
 fn adapter_jj_command_count(adapter_profile: &str) -> u64 {
     match adapter_profile {
         "jj-lib" | "stub" => 0,
-        _ => 5,
+        _ => 6,
     }
 }
 
@@ -570,25 +577,49 @@ struct TransactionExecution {
     state: String,
     blocked_reason: Option<String>,
     mutation_performed: bool,
+    transaction_class: String,
     before_op_id: String,
     after_op_id: String,
     published_revision: Option<String>,
     published_revision_reachable: bool,
+    conflict_materialized: bool,
+    materialized_conflicted_paths: Vec<String>,
     executed_phases: Vec<String>,
     idempotency_replay: bool,
     details: Value,
 }
 
 impl TransactionExecution {
-    fn planner_only(op_id: &str) -> Self {
+    fn planner_only(op_id: &str, transaction_class: String) -> Self {
         Self {
             state: "journaled".to_string(),
             blocked_reason: None,
             mutation_performed: false,
+            transaction_class,
             before_op_id: op_id.to_string(),
             after_op_id: op_id.to_string(),
             published_revision: None,
             published_revision_reachable: false,
+            conflict_materialized: false,
+            materialized_conflicted_paths: Vec::new(),
+            executed_phases: Vec::new(),
+            idempotency_replay: false,
+            details: json!({}),
+        }
+    }
+
+    fn blocked(op_id: &str, transaction_class: &str, reason: String) -> Self {
+        Self {
+            state: "blocked".to_string(),
+            blocked_reason: Some(reason),
+            mutation_performed: false,
+            transaction_class: transaction_class.to_string(),
+            before_op_id: op_id.to_string(),
+            after_op_id: op_id.to_string(),
+            published_revision: None,
+            published_revision_reachable: false,
+            conflict_materialized: false,
+            materialized_conflicted_paths: Vec::new(),
             executed_phases: Vec::new(),
             idempotency_replay: false,
             details: json!({}),
@@ -653,6 +684,27 @@ fn transaction_candidate_phases(request: &SyncCoreRequest) -> Vec<String> {
     phases
 }
 
+fn transaction_candidate_class(request: &SyncCoreRequest) -> String {
+    context_text(
+        &request.python_context,
+        "/transaction_candidate/transaction_class",
+    )
+    .or_else(|| {
+        context_text(
+            &request.python_context,
+            "/transaction_candidate/operation_kind",
+        )
+    })
+    .or_else(|| {
+        context_text(
+            &request.python_context,
+            "/transaction_candidate/scenario_id",
+        )
+    })
+    .map(str::to_string)
+    .unwrap_or_else(|| "full_sync_transaction_candidate".to_string())
+}
+
 fn build_transaction_candidate_decision(
     request: &SyncCoreRequest,
     facts: &RepoFacts,
@@ -682,6 +734,7 @@ fn build_transaction_candidate_decision(
     let live_rev = context_text(&request.python_context, "/live_target/live_rev")
         .unwrap_or(&facts.current.commit_id)
         .to_string();
+    let transaction_class = transaction_candidate_class(request);
     let prepared_rev = context_text(&request.python_context, "/source_state/prepared_rev")
         .or_else(|| context_text(&request.python_context, "/source_state/prepared_revision"))
         .unwrap_or(&facts.current.commit_id)
@@ -702,13 +755,15 @@ fn build_transaction_candidate_decision(
         blocked_reason = Some("transaction_executor_feature_flag_disabled".to_string());
     }
     let safe_to_apply_before_execution = blocked_reason.is_none();
-    let mut execution = TransactionExecution::planner_only(&facts.operation_id);
+    let mut execution =
+        TransactionExecution::planner_only(&facts.operation_id, transaction_class.clone());
     if executor_requested && safe_to_apply_before_execution {
         let before_journal = json!({
             "schema_id": "control-center.agent-up.sync-core.transaction-journal.v0.1",
             "transaction_id": request.transaction_id.clone(),
             "journal_id": format!("journal-{}-before", request.idempotency_key),
             "operation_kind": "full_sync_transaction_candidate",
+            "transaction_class": transaction_class.clone(),
             "state": "before_mutation",
             "blocked_reason": null,
             "workspace_id": request.workspace_id.clone(),
@@ -740,18 +795,11 @@ fn build_transaction_candidate_decision(
             Ok(()) => execution = execute_transaction_candidate(request, facts, &affected_paths),
             Err(reason) => {
                 blocked_reason = Some(reason);
-                execution = TransactionExecution {
-                    state: "blocked".to_string(),
-                    blocked_reason: Some("journal_write_failed".to_string()),
-                    mutation_performed: false,
-                    before_op_id: facts.operation_id.clone(),
-                    after_op_id: facts.operation_id.clone(),
-                    published_revision: None,
-                    published_revision_reachable: false,
-                    executed_phases: Vec::new(),
-                    idempotency_replay: false,
-                    details: json!({}),
-                };
+                execution = TransactionExecution::blocked(
+                    &facts.operation_id,
+                    &transaction_class,
+                    "journal_write_failed".to_string(),
+                );
             }
         }
     }
@@ -796,6 +844,7 @@ fn build_transaction_candidate_decision(
         "transaction_id": request.transaction_id.clone(),
         "journal_id": format!("journal-{}", request.idempotency_key),
         "operation_kind": "full_sync_transaction_candidate",
+        "transaction_class": execution.transaction_class.clone(),
         "state": state,
         "blocked_reason": blocked_reason.clone(),
         "workspace_id": request.workspace_id.clone(),
@@ -805,6 +854,7 @@ fn build_transaction_candidate_decision(
         "prepared_revision": prepared_rev,
         "working_copy_child_revision": facts.current.commit_id.clone(),
         "affected_paths": affected_paths,
+        "materialized_conflicted_paths": execution.materialized_conflicted_paths.clone(),
         "transaction_phases": phase_records,
         "before_op_id": execution.before_op_id.clone(),
         "after_op_id": execution.after_op_id.clone(),
@@ -812,6 +862,7 @@ fn build_transaction_candidate_decision(
         "recovery_action": "disable rust transaction candidate and run agent-up sync --probe --brief --json",
         "idempotency_key": request.idempotency_key.clone(),
         "mutation_performed": execution.mutation_performed,
+        "conflict_materialized": execution.conflict_materialized,
         "transaction_executor_requested": executor_requested,
         "transaction_executor_enabled": executor_enabled,
         "idempotency_replay": execution.idempotency_replay,
@@ -842,6 +893,7 @@ fn build_transaction_candidate_decision(
         "schema_id": "control-center.agent-up.sync-core.transaction-plan.v0.1",
         "plan_id": format!("plan-{}", request.idempotency_key),
         "mutation_class": "full_sync_transaction_candidate",
+        "transaction_class": journal_record.get("transaction_class").cloned().unwrap_or(Value::Null),
         "safe_to_apply": safe_to_apply,
         "blocked_reason": blocked_reason,
         "journal_required": true,
@@ -850,10 +902,12 @@ fn build_transaction_candidate_decision(
         "source_protected": true,
         "recovery_handle": recovery_handle,
         "affected_paths": journal_record.get("affected_paths").cloned().unwrap_or_else(|| json!([])),
+        "materialized_conflicted_paths": journal_record.get("materialized_conflicted_paths").cloned().unwrap_or_else(|| json!([])),
         "transaction_phases": phase_records,
         "execution_owner": "rust_transaction_candidate",
         "feature_flag": "rust_sync_core_transaction_candidate",
         "mutation_performed": execution.mutation_performed,
+        "conflict_materialized": execution.conflict_materialized,
         "transaction_executor_requested": executor_requested,
         "transaction_executor_enabled": executor_enabled,
         "idempotency_replay": execution.idempotency_replay,
@@ -872,10 +926,18 @@ fn build_transaction_candidate_decision(
     GuardedMutationDecision {
         mutation_plan,
         journal_record,
-        next_agent_up_action: if safe_to_apply {
-            json!({"action": "continue", "command": "agent-up sync --probe --brief --json"})
+        next_agent_up_action: if safe_to_apply && execution.conflict_materialized {
+            json!({
+                "action": "resolve_materialized_files",
+                "command": "agent-up sync -m \"<resolution summary>\" --brief --json",
+                "after_resolving_files_command": "agent-up sync -m \"<resolution summary>\" --brief --json",
+                "continue_command": "agent-up sync -m \"<resolution summary>\" --brief --json",
+                "worker_raw_jj_guidance": false
+            })
+        } else if safe_to_apply {
+            json!({"action": "continue", "command": "agent-up sync --probe --brief --json", "worker_raw_jj_guidance": false})
         } else {
-            json!({"action": "python_fallback", "command": "agent-up sync --probe --brief --json"})
+            json!({"action": "python_fallback", "command": "agent-up sync --probe --brief --json", "worker_raw_jj_guidance": false})
         },
         mutation_axis_state: if safe_to_apply && execution.mutation_performed {
             "applied"
@@ -888,31 +950,35 @@ fn build_transaction_candidate_decision(
         },
         output_axis_state: Some(if !safe_to_apply {
             "blocked"
-        } else if conflicted_paths.is_empty() {
-            "green_merge"
-        } else {
+        } else if execution.conflict_materialized || !conflicted_paths.is_empty() {
             "materialized_conflict"
+        } else {
+            "green_merge"
         }),
         decision_class_override: Some(if !safe_to_apply {
             "blocked"
-        } else if conflicted_paths.is_empty() {
-            "clean_merge"
-        } else {
+        } else if execution.conflict_materialized || !conflicted_paths.is_empty() {
             "materialized_conflict"
+        } else {
+            "clean_merge"
         }),
         selected_workspace_state_override: Some(if !safe_to_apply {
             "stale"
-        } else if conflicted_paths.is_empty() {
-            "clean"
-        } else {
+        } else if execution.conflict_materialized || !conflicted_paths.is_empty() {
             "conflicted"
+        } else {
+            "clean"
         }),
-        conflict_authority_override: Some(if conflicted_paths.is_empty() {
+        conflict_authority_override: Some(if execution.conflict_materialized {
+            "rolling_live_head".to_string()
+        } else if conflicted_paths.is_empty() {
             "none".to_string()
         } else {
             conflict_authority.to_string()
         }),
-        conflict_axis_state_override: Some(if conflicted_paths.is_empty() {
+        conflict_axis_state_override: Some(if execution.conflict_materialized {
+            "semantic".to_string()
+        } else if conflicted_paths.is_empty() {
             "none".to_string()
         } else {
             conflict_axis_state.to_string()
@@ -1069,6 +1135,7 @@ fn run_jj_mutation(
 fn set_publish_bookmark(
     request: &SyncCoreRequest,
     bookmark: &str,
+    revision: &str,
 ) -> Result<Option<String>, String> {
     let bookmark = bookmark.trim();
     if bookmark.is_empty() {
@@ -1077,6 +1144,10 @@ fn set_publish_bookmark(
     if bookmark.contains(char::is_whitespace) || bookmark.starts_with('-') {
         return Err(format!("unsafe_publish_bookmark:{bookmark}"));
     }
+    let revision = revision.trim();
+    if revision.is_empty() || revision.contains(char::is_whitespace) || revision.starts_with('-') {
+        return Err(format!("unsafe_publish_revision:{revision}"));
+    }
     run_jj_mutation(
         &request.repo_path,
         &[
@@ -1084,7 +1155,7 @@ fn set_publish_bookmark(
             "set".to_string(),
             "--allow-backwards".to_string(),
             "-r".to_string(),
-            "@-".to_string(),
+            revision.to_string(),
             bookmark.to_string(),
         ],
         request,
@@ -1099,6 +1170,7 @@ fn execute_transaction_candidate(
     facts: &RepoFacts,
     affected_paths: &[String],
 ) -> TransactionExecution {
+    let transaction_class = transaction_candidate_class(request);
     if let Some(previous) =
         applied_journal_for_key(&request.recovery_journal_path, &request.idempotency_key)
     {
@@ -1106,6 +1178,11 @@ fn execute_transaction_candidate(
             state: "recovered".to_string(),
             blocked_reason: None,
             mutation_performed: false,
+            transaction_class: previous
+                .get("transaction_class")
+                .and_then(Value::as_str)
+                .unwrap_or(&transaction_class)
+                .to_string(),
             before_op_id: previous
                 .get("before_op_id")
                 .and_then(Value::as_str)
@@ -1124,20 +1201,56 @@ fn execute_transaction_candidate(
                 .get("published_revision_reachable")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+            conflict_materialized: previous
+                .get("conflict_materialized")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            materialized_conflicted_paths: previous
+                .get("materialized_conflicted_paths")
+                .and_then(Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(|value| value.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
             executed_phases: vec!["idempotency_replay".to_string()],
             idempotency_replay: true,
             details: json!({"recovered_from_journal": previous.get("journal_id").cloned().unwrap_or(Value::Null)}),
         };
+    }
+    if matches!(
+        transaction_class.as_str(),
+        "dirty_publish"
+            | "dirty_publish_no_conflict"
+            | "dirty_publish_live_head_advance"
+            | "publish_conflict_materialize"
+            | "publish_retry"
+            | "dirty_publish_or_publish_conflict"
+    ) || matches!(
+        request.requested_operation.as_str(),
+        "prepare_publish" | "publish_retry"
+    ) {
+        return execute_publish_transaction_candidate(
+            request,
+            facts,
+            affected_paths,
+            transaction_class,
+        );
     }
     if affected_paths.is_empty() {
         return TransactionExecution {
             state: "blocked".to_string(),
             blocked_reason: Some("missing_affected_paths".to_string()),
             mutation_performed: false,
+            transaction_class,
             before_op_id: facts.operation_id.clone(),
             after_op_id: facts.operation_id.clone(),
             published_revision: None,
             published_revision_reachable: false,
+            conflict_materialized: false,
+            materialized_conflicted_paths: Vec::new(),
             executed_phases: Vec::new(),
             idempotency_replay: false,
             details: json!({}),
@@ -1149,10 +1262,13 @@ fn execute_transaction_candidate(
                 state: "blocked".to_string(),
                 blocked_reason: Some(format!("unsafe_transaction_path:{path}")),
                 mutation_performed: false,
+                transaction_class,
                 before_op_id: facts.operation_id.clone(),
                 after_op_id: facts.operation_id.clone(),
                 published_revision: None,
                 published_revision_reachable: false,
+                conflict_materialized: false,
+                materialized_conflicted_paths: Vec::new(),
                 executed_phases: Vec::new(),
                 idempotency_replay: false,
                 details: json!({}),
@@ -1165,10 +1281,13 @@ fn execute_transaction_candidate(
                 state: "blocked".to_string(),
                 blocked_reason: Some(format!("conflict_markers_present:{path}")),
                 mutation_performed: false,
+                transaction_class,
                 before_op_id: facts.operation_id.clone(),
                 after_op_id: facts.operation_id.clone(),
                 published_revision: None,
                 published_revision_reachable: false,
+                conflict_materialized: false,
+                materialized_conflicted_paths: Vec::new(),
                 executed_phases: Vec::new(),
                 idempotency_replay: false,
                 details: json!({}),
@@ -1179,10 +1298,13 @@ fn execute_transaction_candidate(
                 state: "blocked".to_string(),
                 blocked_reason: Some(reason),
                 mutation_performed: false,
+                transaction_class,
                 before_op_id: facts.operation_id.clone(),
                 after_op_id: facts.operation_id.clone(),
                 published_revision: None,
                 published_revision_reachable: false,
+                conflict_materialized: false,
+                materialized_conflicted_paths: Vec::new(),
                 executed_phases: Vec::new(),
                 idempotency_replay: false,
                 details: json!({}),
@@ -1200,10 +1322,13 @@ fn execute_transaction_candidate(
             state: "blocked".to_string(),
             blocked_reason: Some(reason),
             mutation_performed: false,
+            transaction_class,
             before_op_id: facts.operation_id.clone(),
             after_op_id: facts.operation_id.clone(),
             published_revision: None,
             published_revision_reachable: false,
+            conflict_materialized: false,
+            materialized_conflicted_paths: Vec::new(),
             executed_phases: Vec::new(),
             idempotency_replay: false,
             details: json!({}),
@@ -1214,17 +1339,20 @@ fn execute_transaction_candidate(
         "/transaction_candidate/publish_bookmark",
     )
     .unwrap_or("");
-    let published_revision = match set_publish_bookmark(request, bookmark) {
+    let published_revision = match set_publish_bookmark(request, bookmark, "@-") {
         Ok(rev) => rev,
         Err(reason) => {
             return TransactionExecution {
                 state: "blocked".to_string(),
                 blocked_reason: Some(reason),
                 mutation_performed: true,
+                transaction_class,
                 before_op_id: facts.operation_id.clone(),
                 after_op_id: facts.operation_id.clone(),
                 published_revision: None,
                 published_revision_reachable: false,
+                conflict_materialized: true,
+                materialized_conflicted_paths: affected_paths.to_vec(),
                 executed_phases: vec!["fold".to_string()],
                 idempotency_replay: false,
                 details: json!({"partial_mutation": "fold_applied_bookmark_failed"}),
@@ -1241,10 +1369,13 @@ fn execute_transaction_candidate(
                     exc.structured().code
                 )),
                 mutation_performed: true,
+                transaction_class,
                 before_op_id: facts.operation_id.clone(),
                 after_op_id: facts.operation_id.clone(),
                 published_revision,
                 published_revision_reachable: false,
+                conflict_materialized: true,
+                materialized_conflicted_paths: affected_paths.to_vec(),
                 executed_phases: vec!["fold".to_string(), "publish".to_string()],
                 idempotency_replay: false,
                 details: json!({"partial_mutation": "post_fact_read_failed"}),
@@ -1256,9 +1387,16 @@ fn execute_transaction_candidate(
         .as_ref()
         .map(|parent| parent.commit_id.as_str())
         .unwrap_or("");
+    let current_rev = after_facts.current.commit_id.as_str();
     let published_revision_reachable = published_revision
         .as_deref()
-        .map(|rev| !rev.is_empty() && (parent_rev.starts_with(rev) || rev.starts_with(parent_rev)))
+        .map(|rev| {
+            !rev.is_empty()
+                && (parent_rev.starts_with(rev)
+                    || rev.starts_with(parent_rev)
+                    || current_rev.starts_with(rev)
+                    || rev.starts_with(current_rev))
+        })
         .unwrap_or(
             parent_rev
                 != facts
@@ -1271,10 +1409,13 @@ fn execute_transaction_candidate(
         state: "applied".to_string(),
         blocked_reason: None,
         mutation_performed: true,
+        transaction_class,
         before_op_id: facts.operation_id.clone(),
         after_op_id: after_facts.operation_id,
         published_revision,
         published_revision_reachable,
+        conflict_materialized: true,
+        materialized_conflicted_paths: affected_paths.to_vec(),
         executed_phases: vec![
             "fold".to_string(),
             "publish".to_string(),
@@ -1285,6 +1426,319 @@ fn execute_transaction_candidate(
             "post_parent_revision": parent_rev,
             "working_copy_revision": after_facts.current.commit_id,
         }),
+    }
+}
+
+fn execute_publish_transaction_candidate(
+    request: &SyncCoreRequest,
+    facts: &RepoFacts,
+    affected_paths: &[String],
+    transaction_class: String,
+) -> TransactionExecution {
+    let bookmark_advance_only = context_bool(
+        &request.python_context,
+        "/transaction_candidate/bookmark_advance_only",
+    ) || context_bool(
+        &request.python_context,
+        "/transaction_candidate/prepared_bookmark_advance_only",
+    );
+    if affected_paths.is_empty() && !bookmark_advance_only {
+        return blocked_publish_execution(
+            facts,
+            transaction_class,
+            "missing_affected_paths".to_string(),
+            false,
+        );
+    }
+    for path in affected_paths {
+        if !safe_relative_path(path) {
+            return blocked_publish_execution(
+                facts,
+                transaction_class,
+                format!("unsafe_transaction_path:{path}"),
+                false,
+            );
+        }
+    }
+    let bookmark = context_text(
+        &request.python_context,
+        "/transaction_candidate/publish_bookmark",
+    )
+    .unwrap_or("");
+    if bookmark.trim().is_empty() {
+        return blocked_publish_execution(
+            facts,
+            transaction_class,
+            "missing_publish_bookmark".to_string(),
+            false,
+        );
+    }
+    if bookmark_advance_only {
+        let published_revision = match set_publish_bookmark(request, bookmark, "@-") {
+            Ok(rev) => rev,
+            Err(reason) => {
+                return blocked_publish_execution(facts, transaction_class, reason, false);
+            }
+        };
+        let after_publish = match CliJjAdapter.read_repo_facts(request) {
+            Ok(value) => value,
+            Err(exc) => {
+                return TransactionExecution {
+                    state: "blocked".to_string(),
+                    blocked_reason: Some(format!(
+                        "post_publish_fact_read_failed:{}",
+                        exc.structured().code
+                    )),
+                    mutation_performed: true,
+                    transaction_class,
+                    before_op_id: facts.operation_id.clone(),
+                    after_op_id: facts.operation_id.clone(),
+                    published_revision,
+                    published_revision_reachable: false,
+                    conflict_materialized: false,
+                    materialized_conflicted_paths: Vec::new(),
+                    executed_phases: vec!["publish".to_string()],
+                    idempotency_replay: false,
+                    details: json!({"partial_mutation": "bookmark_advance_post_fact_read_failed"}),
+                }
+            }
+        };
+        let parent_rev = after_publish
+            .parent
+            .as_ref()
+            .map(|parent| parent.commit_id.as_str())
+            .unwrap_or("");
+        let current_rev = after_publish.current.commit_id.as_str();
+        let published_revision_reachable = published_revision
+            .as_deref()
+            .map(|rev| {
+                !rev.is_empty()
+                    && (parent_rev.starts_with(rev)
+                        || rev.starts_with(parent_rev)
+                        || current_rev.starts_with(rev)
+                        || rev.starts_with(current_rev))
+            })
+            .unwrap_or(false);
+        return TransactionExecution {
+            state: "applied".to_string(),
+            blocked_reason: None,
+            mutation_performed: true,
+            transaction_class,
+            before_op_id: facts.operation_id.clone(),
+            after_op_id: after_publish.operation_id,
+            published_revision,
+            published_revision_reachable,
+            conflict_materialized: false,
+            materialized_conflicted_paths: Vec::new(),
+            executed_phases: vec![
+                "prepare".to_string(),
+                "publish".to_string(),
+                "refresh".to_string(),
+            ],
+            idempotency_replay: false,
+            details: json!({
+                "transaction_outcome": "dirty_publish_bookmark_advanced",
+                "bookmark_advance_only": true,
+                "post_parent_revision": parent_rev,
+                "working_copy_revision": after_publish.current.commit_id
+            }),
+        };
+    }
+    let live_rev = match context_text(&request.python_context, "/live_target/live_rev") {
+        Some(value) if value != "unknown-live-rev" => value.to_string(),
+        _ => {
+            return blocked_publish_execution(
+                facts,
+                transaction_class,
+                "missing_rolling_live_head".to_string(),
+                false,
+            )
+        }
+    };
+    let source_revset = context_text(
+        &request.python_context,
+        "/transaction_candidate/source_revset",
+    )
+    .unwrap_or("@-")
+    .to_string();
+    if source_revset.contains(char::is_whitespace) || source_revset.starts_with('-') {
+        return blocked_publish_execution(
+            facts,
+            transaction_class,
+            format!("unsafe_source_revset:{source_revset}"),
+            false,
+        );
+    }
+    if let Err(reason) = run_jj_mutation(
+        &request.repo_path,
+        &[
+            "rebase".to_string(),
+            "-s".to_string(),
+            source_revset.clone(),
+            "-d".to_string(),
+            live_rev.clone(),
+        ],
+        request,
+    ) {
+        return blocked_publish_execution(facts, transaction_class, reason, false);
+    }
+    let after_prepare = match CliJjAdapter.read_repo_facts(request) {
+        Ok(value) => value,
+        Err(exc) => {
+            return TransactionExecution {
+                state: "blocked".to_string(),
+                blocked_reason: Some(format!(
+                    "post_prepare_fact_read_failed:{}",
+                    exc.structured().code
+                )),
+                mutation_performed: true,
+                transaction_class,
+                before_op_id: facts.operation_id.clone(),
+                after_op_id: facts.operation_id.clone(),
+                published_revision: None,
+                published_revision_reachable: false,
+                conflict_materialized: false,
+                materialized_conflicted_paths: Vec::new(),
+                executed_phases: vec!["prepare".to_string(), "retry".to_string()],
+                idempotency_replay: false,
+                details: json!({"partial_mutation": "prepare_applied_post_fact_read_failed"}),
+            }
+        }
+    };
+    if !after_prepare.conflicted_paths.is_empty() {
+        return TransactionExecution {
+            state: "applied".to_string(),
+            blocked_reason: None,
+            mutation_performed: true,
+            transaction_class: "publish_conflict_materialize".to_string(),
+            before_op_id: facts.operation_id.clone(),
+            after_op_id: after_prepare.operation_id,
+            published_revision: None,
+            published_revision_reachable: false,
+            conflict_materialized: true,
+            materialized_conflicted_paths: after_prepare.conflicted_paths.clone(),
+            executed_phases: vec!["prepare".to_string(), "retry".to_string()],
+            idempotency_replay: false,
+            details: json!({
+                "transaction_outcome": "publish_conflict_materialized",
+                "conflict_authority": "rolling_live_head",
+                "source_revset": source_revset,
+                "live_rev": live_rev,
+                "conflicted_paths": after_prepare.conflicted_paths
+            }),
+        };
+    }
+    let published_revision = match set_publish_bookmark(request, bookmark, &source_revset) {
+        Ok(rev) => rev,
+        Err(reason) => {
+            return TransactionExecution {
+                state: "blocked".to_string(),
+                blocked_reason: Some(reason),
+                mutation_performed: true,
+                transaction_class,
+                before_op_id: facts.operation_id.clone(),
+                after_op_id: after_prepare.operation_id,
+                published_revision: None,
+                published_revision_reachable: false,
+                conflict_materialized: false,
+                materialized_conflicted_paths: Vec::new(),
+                executed_phases: vec!["prepare".to_string(), "retry".to_string()],
+                idempotency_replay: false,
+                details: json!({"partial_mutation": "prepare_applied_bookmark_failed"}),
+            }
+        }
+    };
+    let after_publish = match CliJjAdapter.read_repo_facts(request) {
+        Ok(value) => value,
+        Err(exc) => {
+            return TransactionExecution {
+                state: "blocked".to_string(),
+                blocked_reason: Some(format!(
+                    "post_publish_fact_read_failed:{}",
+                    exc.structured().code
+                )),
+                mutation_performed: true,
+                transaction_class,
+                before_op_id: facts.operation_id.clone(),
+                after_op_id: after_prepare.operation_id,
+                published_revision,
+                published_revision_reachable: false,
+                conflict_materialized: false,
+                materialized_conflicted_paths: Vec::new(),
+                executed_phases: vec![
+                    "prepare".to_string(),
+                    "retry".to_string(),
+                    "publish".to_string(),
+                ],
+                idempotency_replay: false,
+                details: json!({"partial_mutation": "publish_applied_post_fact_read_failed"}),
+            }
+        }
+    };
+    let parent_rev = after_publish
+        .parent
+        .as_ref()
+        .map(|parent| parent.commit_id.as_str())
+        .unwrap_or("");
+    let current_rev = after_publish.current.commit_id.as_str();
+    let published_revision_reachable = published_revision
+        .as_deref()
+        .map(|rev| {
+            !rev.is_empty()
+                && (parent_rev.starts_with(rev)
+                    || rev.starts_with(parent_rev)
+                    || current_rev.starts_with(rev)
+                    || rev.starts_with(current_rev))
+        })
+        .unwrap_or(false);
+    TransactionExecution {
+        state: "applied".to_string(),
+        blocked_reason: None,
+        mutation_performed: true,
+        transaction_class,
+        before_op_id: facts.operation_id.clone(),
+        after_op_id: after_publish.operation_id,
+        published_revision,
+        published_revision_reachable,
+        conflict_materialized: false,
+        materialized_conflicted_paths: Vec::new(),
+        executed_phases: vec![
+            "prepare".to_string(),
+            "retry".to_string(),
+            "publish".to_string(),
+            "refresh".to_string(),
+        ],
+        idempotency_replay: false,
+        details: json!({
+            "transaction_outcome": "dirty_publish_green",
+            "source_revset": source_revset,
+            "live_rev": live_rev,
+            "post_parent_revision": parent_rev,
+            "working_copy_revision": after_publish.current.commit_id
+        }),
+    }
+}
+
+fn blocked_publish_execution(
+    facts: &RepoFacts,
+    transaction_class: String,
+    reason: String,
+    mutation_performed: bool,
+) -> TransactionExecution {
+    TransactionExecution {
+        state: "blocked".to_string(),
+        blocked_reason: Some(reason),
+        mutation_performed,
+        transaction_class,
+        before_op_id: facts.operation_id.clone(),
+        after_op_id: facts.operation_id.clone(),
+        published_revision: None,
+        published_revision_reachable: false,
+        conflict_materialized: false,
+        materialized_conflicted_paths: Vec::new(),
+        executed_phases: Vec::new(),
+        idempotency_replay: false,
+        details: json!({}),
     }
 }
 

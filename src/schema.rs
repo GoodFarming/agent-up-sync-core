@@ -145,6 +145,12 @@ pub struct RepoFacts {
     pub operation_id: String,
     pub conflict_count: usize,
     pub conflicted_paths: Vec<String>,
+    #[serde(default)]
+    pub working_copy_dirty: bool,
+    #[serde(default)]
+    pub changed_path_count: usize,
+    #[serde(default)]
+    pub changed_paths: Vec<String>,
     pub adapter_profile: String,
     pub adapter_version: String,
     pub mutation_performed: bool,

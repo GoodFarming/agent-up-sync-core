@@ -9,7 +9,10 @@ from Apps.control_center.backend.convergence.agent_up_sync_core_bridge import (
     summarize_sync_core_deployment_canary_matrix,
     sync_core_managed_repair_command,
 )
-from Apps.control_center.backend.convergence.agent_up_sync_engine import _sync_core_transaction_executor_enabled
+from Apps.control_center.backend.convergence.agent_up_sync_engine import (
+    _sync_core_publish_transaction_authority_enabled,
+    _sync_core_transaction_executor_enabled,
+)
 from Apps.control_center.backend.convergence.blocker_registry import format_default_next_exact_command
 
 
@@ -126,6 +129,21 @@ def test_transaction_executor_defaults_on_with_explicit_rollback_flags(monkeypat
 
     monkeypatch.setenv(SYNC_CORE_ROLLOUT_MODE_ENV, "python")
     assert _sync_core_transaction_executor_enabled() is False
+
+
+def test_publish_transaction_authority_defaults_on_with_explicit_rollback_flags(monkeypatch) -> None:
+    monkeypatch.delenv("CONTROLCENTER_SYNC_CORE_PUBLISH_TRANSACTION_AUTHORITY", raising=False)
+    monkeypatch.delenv(SYNC_CORE_ROLLOUT_MODE_ENV, raising=False)
+    assert _sync_core_publish_transaction_authority_enabled() is True
+
+    monkeypatch.setenv("CONTROLCENTER_SYNC_CORE_PUBLISH_TRANSACTION_AUTHORITY", "0")
+    assert _sync_core_publish_transaction_authority_enabled() is False
+
+    monkeypatch.setenv("CONTROLCENTER_SYNC_CORE_PUBLISH_TRANSACTION_AUTHORITY", "1")
+    assert _sync_core_publish_transaction_authority_enabled() is True
+
+    monkeypatch.setenv(SYNC_CORE_ROLLOUT_MODE_ENV, "python")
+    assert _sync_core_publish_transaction_authority_enabled() is False
 
 
 def test_deployment_canary_matrix_rejects_constructed_or_synthetic_receipts() -> None:
