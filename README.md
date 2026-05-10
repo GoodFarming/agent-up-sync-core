@@ -16,6 +16,31 @@ The current Cargo package and compatibility binary are still named
 `agent-up-sync-core`. The public project name is `Agent-Up JJ Sync Core` because
 the core is specifically about JJ workspace convergence.
 
+## Current Public Release
+
+This release exposes the Rust sync core as an Agent-Up operations candidate, not
+as a blanket replacement for every sync topology. In the upstream Agent-Up
+runtime it now covers:
+
+- Rust-authored topology authority for conflict packet ownership, continuation
+  eligibility, source provenance, no-local-commit meaning, unpublished range
+  shape, generated-surface policy, live/sync-group basis validity, unsupported
+  topology receipts, and stale worker-stack detection;
+- read/probe state-web handoff with zero routine Python/JJ recomputation on
+  supported snapshot paths;
+- transaction-candidate support for dirty publish, head-advance retry,
+  materialized conflict, resolved fold/publish, and stale/unrelated fail-closed
+  canaries;
+- explicit Rust/Python cost split so adapter subprocess/JJ cost cannot be
+  hidden inside a "Rust" receipt;
+- visible Python fallback for unsupported topology, policy rendering, receipt
+  UX, and compatibility.
+
+The intended production boundary is still `agent-up sync`. Ordinary workers
+should not receive raw JJ guidance. Rust supplies one structured state/transaction
+answer; Agent-Up applies policy, renders receipts, records evidence, and falls
+back safely when the Rust path declines authority.
+
 ## Why It Exists
 
 Agent-Up manages many disposable worker workspaces converging into one live
@@ -65,7 +90,7 @@ In the full Agent-Up system:
 - receipts must say whether the path was `rust_shadow`,
   `rust_read_authoritative`, `rust_transaction_candidate`, or `python_fallback`.
 
-The first major efficiency target is read authority:
+The first major efficiency target was read authority:
 
 ```text
 CONTROLCENTER_SYNC_CORE_ADAPTER=jj-lib agent-up sync --probe --brief --json
@@ -77,6 +102,19 @@ For read orientation, `adapter_profile=jj-lib` must report:
 - `adapter_jj_command_count=0`;
 - `repo_snapshot_count=1`;
 - `parity_state=matched` or a typed degraded/fallback state.
+
+The current integration target is transaction authority for named, canary-proven
+classes. A supported mutation receipt should expose fields equivalent to:
+
+- `sync_engine_mode=rust_transaction_authority` or
+  `rust_transaction_candidate`;
+- `transaction_class=dirty_publish|head_advance_retry|publish_conflict|conflict_continuation`;
+- `mutation_performed=true` when Rust actually performed a guarded mutation;
+- before/after JJ operation ids;
+- a journal id and recovery handle;
+- Rust kernel time, Rust adapter subprocess/JJ counts, Python helper JJ count,
+  wall time, and repo-lock time;
+- `worker_raw_jj_guidance=false`.
 
 ## How The Design Emerged
 
@@ -106,11 +144,17 @@ The design response was:
 - `CliJjAdapter` fallback.
 - Read-only `JjLibAdapter` behind the `jj-lib-adapter` feature.
 - Shadow and read-authority classifications.
+- Rust-authored topology authority for conflict ownership, continuation
+  eligibility, source provenance, live-basis validity, unsupported topology, and
+  stale worker-stack guards.
 - Generated/semantic conflict classification inputs.
 - Conflict packet candidate output.
 - Guarded mutation and transaction-candidate planning surfaces.
-- Transaction candidate support for controlled resolved-conflict continuation
+- Transaction candidate support for dirty publish, head-advance retry,
+  materialized conflict, resolved fold/publish, and stale/unrelated fail-closed
   paths in Agent-Up canaries.
+- Agent-Up continuation guidance that keeps post-conflict workers on
+  `agent-up sync -m "<resolution summary>"` instead of raw JJ commands.
 - Performance budget telemetry.
 
 ## Deploying It
@@ -140,8 +184,8 @@ cargo build --no-default-features --features jj-lib-adapter
 
 ### Inside Agent-Up
 
-Agent-Up calls the binary once per sync transaction. A typical read-authority
-activation uses:
+Agent-Up calls the binary once per sync transaction or sync-state handoff. A
+typical read-authority activation uses:
 
 ```bash
 CONTROLCENTER_SYNC_CORE_PREFLIGHT_READ_AUTHORITY=1 \
@@ -149,8 +193,20 @@ CONTROLCENTER_SYNC_CORE_ADAPTER=jj-lib \
 agent-up sync --probe --brief --json
 ```
 
-The caller should keep Python fallback enabled until the local incident corpus
-and live canaries prove parity for the relevant sync classes.
+For transaction-candidate rollout, keep Python fallback enabled and watch the
+installed Agent-Up canaries for:
+
+- dirty publish, no conflict;
+- head-advance retry;
+- materialized A/B conflict;
+- resolved conflict fold/publish;
+- stale packet fail-closed;
+- unrelated edits fail-closed.
+
+The default path should not be promoted from operations candidate to operations
+ready until installed receipts prove Rust mutation authority for the named
+classes, Python fallback remains visible but unused for those classes, and
+unsupported topology returns one safe Agent-Up action.
 
 ## Safety Model
 
@@ -167,6 +223,15 @@ Mutation authority requires:
 - a recovery handle;
 - an idempotency key;
 - fallback or rollback visibility.
+
+## Release Safety Boundaries
+
+This release does not claim arbitrary semantic auto-merge, full replacement of
+Agent-Up's Python policy layer, or operations-ready Rust mutation authority for
+every JJ topology. It is a bounded convergence core with explicit authority
+states. If the Rust response is stale, unsupported, missing its validity basis,
+or unable to provide a journaled recovery path, callers must degrade or fall
+back rather than pretend the snapshot is green.
 
 ## When Not To Use It
 
@@ -196,6 +261,10 @@ bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_tra
 bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate jj-lib-read-adapter
 bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_parity_expansion.sh --gate all
 ```
+
+The public mirror also carries upstream integration fixtures under
+`upstream/agent-up-integration-tests/` so downstream reviewers can inspect the
+Agent-Up canary contract without importing the full private runtime.
 
 See `ARCHITECTURE.md`, `SCHEMAS.md`, `SAFETY.md`, `EXAMPLES.md`,
 `BENCHMARKS.md`, `RELEASE.md`, and `MSRV.md` for the open-source readiness
