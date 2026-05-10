@@ -1,16 +1,20 @@
 # Agent-Up JJ Sync Core
 
-Agent-Up JJ Sync Core is a Rust convergence kernel for JJ-backed workspaces.
-It is designed to answer one hard question quickly and safely:
+Agent-Up JJ Sync Core is the Rust transaction and traceability kernel for
+Agent-Up sync over JJ-backed workspaces. It is designed to answer one hard
+question quickly and safely:
 
 > Given a selected workspace and a target live/root state, what is the exact
-> safe sync state, what conflicts exist, what can be resolved deterministically,
-> and what should the caller do next?
+> safe sync transaction, what conflicts exist, what can be resolved
+> deterministically, what trace/recovery evidence must be recorded, and what
+> should happen next?
 
-Agent-Up is the first caller. The crate boundary is intentionally library-first
-so other systems can also use it for fast repository orientation, source
-provenance, conflict classification, conflict packet generation, and journaled
-safe mutation planning.
+Within Agent-Up, `agent-up sync` is the owning transaction surface and the
+operator-facing traceability module. This crate is the Rust kernel inside that
+sync boundary, not a separate discovery helper. The crate boundary is still
+library-first so other systems can reuse the same transaction model for fast
+repository orientation, source provenance, conflict classification, conflict
+packet generation, journaled mutation planning, and recovery receipts.
 
 The current Cargo package and compatibility binary are still named
 `agent-up-sync-core`. The public project name is `Agent-Up JJ Sync Core` because
@@ -47,8 +51,9 @@ Agent-Up manages many disposable worker workspaces converging into one live
 root. The public worker contract is deliberately simple: ordinary agents run
 `agent-up sync`; they should not become JJ operators.
 
-Python can orchestrate that contract, but rich sync orientation through repeated
-JJ CLI subprocesses is expensive and hard to reason about:
+Python can orchestrate that contract, but a sync transaction that repeatedly
+re-discovers graph state through JJ CLI subprocesses is expensive and hard to
+reason about:
 
 - each graph question can reopen the repo;
 - subprocess startup and JSON/text parsing dominate routine paths;
@@ -56,9 +61,9 @@ JJ CLI subprocesses is expensive and hard to reason about:
 - fallback and provenance can become ambiguous;
 - internal JJ cost can stay high even when worker guidance is clean.
 
-This Rust core exists to move the expensive, algorithmic part into one
+This Rust core exists to move the expensive, algorithmic part into one sync
 transaction boundary: one request, one repo/workspace snapshot, one structured
-decision.
+decision, one journaled trace.
 
 ## Advantages
 
@@ -81,7 +86,7 @@ decision.
 
 In the full Agent-Up system:
 
-- `agent-up sync` remains the public command;
+- `agent-up sync` remains the public transaction and traceability boundary;
 - Python remains UX, policy, receipt rendering, runtime install, workpack
   integration, feature flags, and fallback;
 - Rust owns schema-checked sync classification and, in guarded modes, narrow
@@ -184,8 +189,9 @@ cargo build --no-default-features --features jj-lib-adapter
 
 ### Inside Agent-Up
 
-Agent-Up calls the binary once per sync transaction or sync-state handoff. A
-typical read-authority activation uses:
+Inside the Agent-Up sync module, the Python boundary invokes the Rust kernel
+once per sync transaction or sync-state handoff. A typical read-authority
+activation uses:
 
 ```bash
 CONTROLCENTER_SYNC_CORE_PREFLIGHT_READ_AUTHORITY=1 \
@@ -235,10 +241,10 @@ back rather than pretend the snapshot is green.
 
 ## When Not To Use It
 
-This is not a replacement for JJ, Git, or human semantic judgment. It is a
-sync-orientation and convergence kernel. It is most useful when you need a
-structured decision about a JJ workspace and a live/root target, especially in
-multi-agent or automation-heavy systems.
+This is not a replacement for JJ, Git, or human semantic judgment. It is a sync
+transaction, convergence, and traceability kernel. It is most useful when you
+need a structured, journaled decision about a JJ workspace and a live/root
+target, especially in multi-agent or automation-heavy systems.
 
 ## Validation
 
