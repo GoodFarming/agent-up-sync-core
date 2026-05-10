@@ -170,11 +170,51 @@ pub struct SyncCoreResponse {
     pub live_root_state: String,
     pub conflict_authority: String,
     pub runtime_relevance: String,
+    #[serde(default)]
+    pub topology_summary: Value,
+    #[serde(default)]
+    pub conflict_packet_authority: Value,
+    #[serde(default)]
+    pub continuation_eligibility: Value,
+    #[serde(default)]
+    pub source_provenance: Value,
+    #[serde(default)]
+    pub no_local_commit_meaning: String,
+    #[serde(default)]
+    pub unpublished_range_shape: String,
+    #[serde(default)]
+    pub unpublished_range: Value,
+    #[serde(default)]
+    pub range_age_class: String,
+    #[serde(default)]
+    pub authority_surface_overlap: bool,
+    #[serde(default)]
+    pub generated_surface_policy: Value,
+    #[serde(default)]
+    pub stale_worker_stack_guard: Value,
+    #[serde(default)]
+    pub live_basis_state: String,
+    #[serde(default)]
+    pub sync_group_basis_state: String,
+    #[serde(default)]
+    pub live_basis: Value,
+    #[serde(default)]
+    pub unsupported_topology_reason: Option<String>,
+    #[serde(default)]
+    pub python_post_rust_graph_recompute_required: bool,
+    #[serde(default)]
+    pub python_post_rust_graph_recompute_count: u64,
+    #[serde(default)]
+    pub cost_split: Value,
     pub provenance: Provenance,
     pub conflict_packet_candidate: Value,
     pub mutation_plan: Value,
     pub journal_record: Value,
     pub next_agent_up_action: Value,
+    #[serde(default)]
+    pub topology_authority: Value,
+    #[serde(default)]
+    pub worker_raw_jj_guidance: bool,
     pub python_fallback_reason: Option<String>,
     pub parity_state: String,
     pub latency_ms: f64,

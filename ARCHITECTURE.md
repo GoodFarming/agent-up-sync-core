@@ -32,3 +32,13 @@ JJ access is hidden behind `JjAdapter`.
 3. `rust_mutation_authoritative`: narrow journaled mutation classes.
 4. `rust_transaction_candidate`: full transaction candidate behind feature flag.
 5. rollout lock: installed canary plus rollback/fallback proof.
+
+## Topology Authority
+
+Read and transaction responses carry a single Rust-authored topology authority
+block. It classifies conflict packet ownership, continuation eligibility,
+source provenance, unpublished range shape and age, generated surface policy,
+live/sync-group basis state, unsupported topology, and Rust/Python cost split.
+
+Python may render and compact this metadata, but it must not re-run JJ graph
+archaeology after Rust has returned an authoritative topology block.

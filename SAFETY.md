@@ -9,6 +9,10 @@ Rules:
   idempotency key;
 - no arbitrary semantic auto-merge;
 - generated policy must be explicit and path-classified;
+- stale worker stacks with broad authority-surface overlap must block before
+  mutation;
+- stale live or sync-group basis must fail closed with an explicit Agent-Up
+  refresh/sync action;
 - fallback must remain receipt-visible;
 - raw JJ commands are internal adapter detail, not caller guidance;
 - degraded states must include reason codes and the next Agent-Up action.

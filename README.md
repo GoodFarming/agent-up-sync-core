@@ -1,16 +1,11 @@
 # Agent-Up JJ Sync Core
 
 Agent-Up JJ Sync Core is a Rust convergence kernel for JJ-backed workspaces.
-It is designed to serve one core function quickly and safely:
+It is designed to answer one hard question quickly and safely:
 
-> Sync this workspace with the Live/Rolling Main Repo. If there are conflicts, 
-> surface them in the workspace immediately, if there are no conflicts, merge. 
-
-I designed this system to bring us closer to CRDT for Agents, and considering
-the gargantuine task of securing write tools within boundaries, and my distaste
-for branches/worktrees/files-locks - this was the best thing I could come up with.
-
-Optimistic Concurrency Control - or Low Conflict Replicated Data Types.
+> Given a selected workspace and a target live/root state, what is the exact
+> safe sync state, what conflicts exist, what can be resolved deterministically,
+> and what should the caller do next?
 
 Agent-Up is the first caller. The crate boundary is intentionally library-first
 so other systems can also use it for fast repository orientation, source
@@ -199,6 +194,7 @@ Control Center upstream validation:
 ```bash
 bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate rollout
 bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate jj-lib-read-adapter
+bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_parity_expansion.sh --gate all
 ```
 
 See `ARCHITECTURE.md`, `SCHEMAS.md`, `SAFETY.md`, `EXAMPLES.md`,

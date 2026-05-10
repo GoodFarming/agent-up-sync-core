@@ -301,6 +301,14 @@ fn success_response(
         "python_context.runtime_context".to_string(),
         "python_context.conflict_context".to_string(),
         "conflict_side_context".to_string(),
+        "conflict_packet_authority".to_string(),
+        "continuation_eligibility".to_string(),
+        "no_local_commit_meaning".to_string(),
+        "unpublished_range_shape".to_string(),
+        "generated_surface_policy".to_string(),
+        "stale_worker_stack_guard".to_string(),
+        "live_basis_state".to_string(),
+        "unsupported_topology_reason".to_string(),
     ];
     let decision_drivers = vec![
         "mutation_disallowed".to_string(),
@@ -366,6 +374,73 @@ fn success_response(
         "one_kernel_call": true,
         "degraded_reason": performance_degraded_reason
     });
+    let topology_authority = build_topology_authority(TopologyAuthorityInput {
+        request,
+        facts: &facts,
+        paths: &conflicted_paths,
+        classifications: &path_classifications,
+        conflict_packet_candidate: &conflict_packet_candidate,
+        guarded_mutation: &guarded_mutation,
+        decision_class: decision_class_effective,
+        selected_workspace_state: selected_workspace_state_effective,
+        source_provenance_state,
+        live_root_state,
+        conflict_authority: conflict_authority_effective,
+        conflict_axis_state: conflict_axis_state_effective,
+        performance_budget: &performance_budget,
+    });
+    let conflict_packet_authority_topology = topology_authority
+        .get("conflict_packet_authority")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let continuation_eligibility = conflict_packet_authority_topology
+        .get("continuation_eligibility")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let source_provenance_topology = topology_authority
+        .get("source_provenance")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let unpublished_range_topology = topology_authority
+        .get("unpublished_range")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let generated_surface_policy_topology = topology_authority
+        .get("generated_surface_policy")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let stale_worker_stack_guard_topology = topology_authority
+        .get("stale_worker_stack_guard")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let live_basis_topology = topology_authority
+        .get("live_basis")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let sync_group_basis_topology = topology_authority
+        .get("sync_group_basis")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let cost_split_topology = topology_authority
+        .get("cost_attribution")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let unsupported_topology_reason = topology_authority
+        .pointer("/unsupported_topology/reason")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+    let topology_summary = json!({
+        "schema_id": "control-center.agent-up.sync-core.topology-summary.v0.1",
+        "authority_owner": "rust_sync_core",
+        "decision_class": decision_class_effective,
+        "selected_workspace_state": selected_workspace_state_effective,
+        "source_provenance_state": source_provenance_state,
+        "conflict_authority": conflict_authority_effective,
+        "unsupported_topology_reason": unsupported_topology_reason.clone(),
+        "python_post_rust_graph_recompute_required": false,
+        "worker_raw_jj_guidance": false,
+    });
     SyncCoreResponse {
         schema_id: RESPONSE_SCHEMA_ID.to_string(),
         schema_version: SCHEMA_VERSION.to_string(),
@@ -379,6 +454,47 @@ fn success_response(
         live_root_state: live_root_state.to_string(),
         conflict_authority: conflict_authority_effective.to_string(),
         runtime_relevance: runtime_relevance.to_string(),
+        topology_summary,
+        conflict_packet_authority: conflict_packet_authority_topology,
+        continuation_eligibility,
+        source_provenance: source_provenance_topology.clone(),
+        no_local_commit_meaning: source_provenance_topology
+            .get("no_local_commit_meaning")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        unpublished_range_shape: unpublished_range_topology
+            .get("shape")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        unpublished_range: unpublished_range_topology.clone(),
+        range_age_class: unpublished_range_topology
+            .get("range_age_class")
+            .and_then(Value::as_str)
+            .unwrap_or("fresh")
+            .to_string(),
+        authority_surface_overlap: unpublished_range_topology
+            .get("authority_surface_overlap")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        generated_surface_policy: generated_surface_policy_topology,
+        stale_worker_stack_guard: stale_worker_stack_guard_topology,
+        live_basis_state: live_basis_topology
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("fresh")
+            .to_string(),
+        sync_group_basis_state: sync_group_basis_topology
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("fresh")
+            .to_string(),
+        live_basis: live_basis_topology,
+        unsupported_topology_reason,
+        python_post_rust_graph_recompute_required: false,
+        python_post_rust_graph_recompute_count: 0,
+        cost_split: cost_split_topology,
         provenance: Provenance {
             workspace_rev: facts.current.commit_id.clone(),
             source_rev: facts.current.commit_id.clone(),
@@ -394,6 +510,8 @@ fn success_response(
         mutation_plan: guarded_mutation.mutation_plan,
         journal_record: guarded_mutation.journal_record,
         next_agent_up_action: guarded_mutation.next_agent_up_action,
+        topology_authority,
+        worker_raw_jj_guidance: false,
         python_fallback_reason: None,
         parity_state: "not_compared".to_string(),
         latency_ms,
@@ -674,6 +792,409 @@ fn context_text<'a>(context: &'a Value, pointer: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
+fn context_u64(context: &Value, pointer: &str) -> Option<u64> {
+    context.pointer(pointer).and_then(|value| {
+        value
+            .as_u64()
+            .or_else(|| value.as_i64().and_then(|number| u64::try_from(number).ok()))
+            .or_else(|| {
+                value
+                    .as_str()
+                    .and_then(|text| text.trim().parse::<u64>().ok())
+            })
+    })
+}
+
+fn simple_path_digest(paths: &[String]) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    let mut sorted = paths.to_vec();
+    sorted.sort();
+    for path in sorted {
+        for byte in path.as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn topology_action_for_guard(state: &str, fallback: &Value) -> Value {
+    if state == "clear" {
+        return fallback.clone();
+    }
+    json!({
+        "action": if state == "stop" { "stop_and_revalidate" } else { "salvage_or_degrade" },
+        "command": "agent-up sync --probe --brief --json",
+        "next_exact_command": "agent-up sync --probe --brief --json",
+        "worker_raw_jj_guidance": false
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+struct TopologyAuthorityInput<'a> {
+    request: &'a SyncCoreRequest,
+    facts: &'a RepoFacts,
+    paths: &'a [String],
+    classifications: &'a [PathClassification],
+    conflict_packet_candidate: &'a Value,
+    guarded_mutation: &'a GuardedMutationDecision,
+    decision_class: &'a str,
+    selected_workspace_state: &'a str,
+    source_provenance_state: &'a str,
+    live_root_state: &'a str,
+    conflict_authority: &'a str,
+    conflict_axis_state: &'a str,
+    performance_budget: &'a Value,
+}
+
+fn build_topology_authority(input: TopologyAuthorityInput<'_>) -> Value {
+    let request = input.request;
+    let facts = input.facts;
+    let paths = input.paths;
+    let classifications = input.classifications;
+    let conflict_packet_candidate = input.conflict_packet_candidate;
+    let guarded_mutation = input.guarded_mutation;
+    let decision_class = input.decision_class;
+    let selected_workspace_state = input.selected_workspace_state;
+    let source_provenance_state = input.source_provenance_state;
+    let live_root_state = input.live_root_state;
+    let conflict_authority = input.conflict_authority;
+    let conflict_axis_state = input.conflict_axis_state;
+    let performance_budget = input.performance_budget;
+    let packet_id = context_text(
+        &request.python_context,
+        "/conflict_context/conflict_packet_id",
+    )
+    .or_else(|| {
+        context_text(
+            &request.python_context,
+            "/guarded_mutation/conflict_packet_id",
+        )
+    })
+    .unwrap_or("not_materialized");
+    let packet_owner_workspace = context_text(
+        &request.python_context,
+        "/conflict_context/source_workspace_id",
+    )
+    .unwrap_or(&request.workspace_id);
+    let wrong_packet_owner =
+        !packet_owner_workspace.is_empty() && packet_owner_workspace != request.workspace_id;
+    let stale_packet = context_bool(&request.python_context, "/conflict_context/stale_packet")
+        || context_bool(&request.python_context, "/guarded_mutation/stale_packet");
+    let source_recovery_handle = context_text(
+        &request.python_context,
+        "/source_state/prepared_revision_recovery/handle",
+    )
+    .or_else(|| context_text(&request.python_context, "/source_state/recovery_handle"))
+    .or_else(|| context_text(&request.python_context, "/guarded_mutation/recovery_handle"));
+    let no_local_commit_meaning = context_text(
+        &request.python_context,
+        "/source_state/no_local_commit_meaning",
+    )
+    .or_else(|| {
+        context_text(
+            &request.python_context,
+            "/source_state/no_local_commit_classification",
+        )
+    })
+    .map(str::to_string)
+    .unwrap_or_else(|| match source_provenance_state {
+        "published" => "already_published_proof".to_string(),
+        "prepared" if source_recovery_handle.is_some() => "prepared_lost_recovery".to_string(),
+        "protected" => "protected_source".to_string(),
+        "recoverable" => "recoverable_source".to_string(),
+        "missing" => "unverifiable_source".to_string(),
+        "none_or_clean" => "never_authored_clean_noop".to_string(),
+        _ => "local_source_present".to_string(),
+    });
+    let unpublished_commit_count = context_u64(
+        &request.python_context,
+        "/unpublished_range/unpublished_commit_count",
+    )
+    .or_else(|| context_u64(&request.python_context, "/unpublished_range/commit_count"))
+    .or_else(|| {
+        context_u64(
+            &request.python_context,
+            "/transaction_candidate/unpublished_commit_count",
+        )
+    })
+    .unwrap_or(0);
+    let range_age_class = context_text(&request.python_context, "/unpublished_range/age_class")
+        .or_else(|| context_text(&request.python_context, "/stale_worker_stack/age_class"))
+        .unwrap_or("fresh");
+    let range_age_hours = context_u64(
+        &request.python_context,
+        "/unpublished_range/range_age_hours",
+    )
+    .unwrap_or(0)
+    .max(
+        context_u64(
+            &request.python_context,
+            "/stale_worker_stack/range_age_hours",
+        )
+        .unwrap_or(0),
+    );
+    let changed_paths = {
+        let mut values = context_array(&request.python_context, "/unpublished_range/changed_paths");
+        if values.is_empty() {
+            values = context_array(
+                &request.python_context,
+                "/unpublished_range/working_copy_changed_paths",
+            );
+        }
+        if values.is_empty() {
+            values = context_array(
+                &request.python_context,
+                "/transaction_candidate/affected_paths",
+            );
+        }
+        if values.is_empty() {
+            values = paths.to_vec();
+        }
+        values
+    };
+    let semantic_count = classifications
+        .iter()
+        .filter(|item| item.surface_class == "semantic")
+        .count();
+    let generated_count = classifications
+        .iter()
+        .filter(|item| item.surface_class == "generated")
+        .count();
+    let worker_authored_generated = changed_paths
+        .iter()
+        .any(|path| path_is_generated(path, classifications))
+        && !context_array(
+            &request.python_context,
+            "/conflict_context/worker_intent_paths",
+        )
+        .is_empty();
+    let authority_overlap = changed_paths.iter().any(|path| {
+        path.starts_with("@agents/")
+            || path.starts_with("@planning/")
+            || path.contains("AUTHORITY.md")
+            || path.contains("AGENTS.md")
+            || path.contains("CLAIMS-MAP")
+            || path.contains("VALIDATION-MANIFEST")
+            || path.contains("Apps/control_center/backend/convergence/")
+    }) || context_bool(
+        &request.python_context,
+        "/stale_worker_stack/authority_surface_overlap",
+    ) || context_bool(
+        &request.python_context,
+        "/unpublished_range/authority_surface_overlap",
+    );
+    let old_range = range_age_hours >= 24 * 7
+        || matches!(range_age_class, "old" | "stale")
+        || context_bool(&request.python_context, "/unpublished_range/old_range")
+        || context_bool(&request.python_context, "/stale_worker_stack/old");
+    let broad_range = unpublished_commit_count >= 5
+        || changed_paths.len() >= 12
+        || context_text(&request.python_context, "/unpublished_range/range_shape") == Some("broad")
+        || context_bool(&request.python_context, "/unpublished_range/broad_range")
+        || context_bool(&request.python_context, "/stale_worker_stack/broad");
+    let live_basis_stale = matches!(live_root_state, "conflicted" | "unavailable")
+        || matches!(
+            context_text(&request.python_context, "/live_basis/state").unwrap_or("fresh"),
+            "stale" | "aged" | "invalid" | "drifted"
+        )
+        || context_bool(&request.python_context, "/live_basis/stale")
+        || context_bool(&request.python_context, "/live_basis/live_head_drift")
+        || context_bool(&request.python_context, "/live_basis/sync_group_head_drift")
+        || request
+            .python_context
+            .pointer("/live_basis/basis_valid")
+            .and_then(Value::as_bool)
+            == Some(false);
+    let sync_group_basis_stale = matches!(
+        context_text(&request.python_context, "/sync_group/basis_state").unwrap_or("fresh"),
+        "stale" | "aged" | "invalid" | "drifted"
+    ) || request
+        .python_context
+        .pointer("/sync_group/basis_valid")
+        .and_then(Value::as_bool)
+        == Some(false);
+    let basis_stale = live_basis_stale || sync_group_basis_stale;
+    let stale_reasons: Vec<&str> = [
+        (old_range, "old_range"),
+        (broad_range, "broad_range"),
+        (authority_overlap, "authority_surface_overlap"),
+        (basis_stale, "live_or_sync_group_basis_stale"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, reason)| enabled.then_some(reason))
+    .collect();
+    let stale_authority_stack = authority_overlap && (old_range || broad_range);
+    let stale_guard_state = if stale_authority_stack {
+        "stop"
+    } else if broad_range || old_range || authority_overlap {
+        "salvage"
+    } else if basis_stale {
+        "degrade"
+    } else {
+        "clear"
+    };
+    let continuation_state = if wrong_packet_owner {
+        "blocked_wrong_owner"
+    } else if stale_packet {
+        "blocked_stale_packet"
+    } else if paths.is_empty() {
+        "not_required"
+    } else if decision_class == "materialized_conflict" || conflict_axis_state != "none" {
+        "eligible_after_file_resolution"
+    } else {
+        "not_required"
+    };
+    let unsupported_reason = context_text(&request.python_context, "/unsupported_topology/reason")
+        .map(str::to_string)
+        .or_else(|| {
+            guarded_mutation
+                .mutation_plan
+                .get("blocked_reason")
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            stale_authority_stack
+                .then(|| "stale_worker_stack_authority_surface_overlap".to_string())
+        })
+        .or_else(|| basis_stale.then(|| "stale_live_or_sync_group_basis".to_string()))
+        .or_else(|| (stale_guard_state == "stop").then(|| "stale_worker_stack_stop".to_string()));
+    let unsupported_topology_state = if unsupported_reason.is_some() {
+        "unsupported"
+    } else {
+        "supported"
+    };
+    let unsupported_topology_action_state = if unsupported_reason.is_some() {
+        "degrade"
+    } else {
+        "clear"
+    };
+    let unsupported_reason_text = unsupported_reason.unwrap_or_default();
+    let validity_key = json!({
+        "workspace_id": request.workspace_id,
+        "workspace_op_id": facts.operation_id,
+        "workspace_head": facts.current.commit_id,
+        "parent_head": facts.parent.as_ref().map(|parent| parent.commit_id.as_str()).unwrap_or(""),
+        "live_head": context_text(&request.python_context, "/live_target/live_rev").unwrap_or(""),
+        "sync_group_id": request.sync_group_id,
+        "sync_group_head": context_text(&request.python_context, "/sync_group/sync_group_head")
+            .or_else(|| context_text(&request.python_context, "/sync_group/group_head_rev"))
+            .unwrap_or(""),
+        "conflict_packet_id": packet_id,
+        "conflict_packet_version": context_text(&request.python_context, "/conflict_context/conflict_packet_version").unwrap_or("v0.1"),
+        "runtime_stage_hash": context_text(&request.python_context, "/runtime_context/runtime_stage_hash")
+            .or_else(|| context_text(&request.python_context, "/runtime_context/runtime_manifest_hash"))
+            .unwrap_or(""),
+        "authority_mode": request.engine_mode_requested,
+        "adapter_profile": facts.adapter_profile
+    });
+    json!({
+        "schema_id": "control-center.agent-up.sync-core.topology-authority.v0.1",
+        "authority_owner": "rust_sync_core",
+        "decision_class": decision_class,
+        "selected_workspace_state": selected_workspace_state,
+        "conflict_packet_authority": {
+            "state": if paths.is_empty() { "none" } else { "present" },
+            "conflict_packet_id": packet_id,
+            "packet_id": packet_id,
+            "packet_version": context_text(&request.python_context, "/conflict_context/conflict_packet_version").unwrap_or("v0.1"),
+            "packet_owner_workspace": packet_owner_workspace,
+            "wrong_owner": wrong_packet_owner,
+            "conflict_authority": conflict_authority,
+            "materialized_path_digest": simple_path_digest(paths),
+            "candidate": conflict_packet_candidate,
+            "continuation_eligibility": {
+                "state": continuation_state,
+                "blocked_reason": if wrong_packet_owner {
+                    "wrong_packet_owner"
+                } else if stale_packet {
+                    "stale_conflict_packet_revision_anchor"
+                } else {
+                    ""
+                },
+                "after_resolving_files_command": guarded_mutation
+                    .next_agent_up_action
+                    .get("after_resolving_files_command")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+            }
+        },
+        "source_provenance": {
+            "state": source_provenance_state,
+            "no_local_commit_meaning": no_local_commit_meaning,
+            "protected_source": matches!(source_provenance_state, "prepared" | "protected" | "recoverable" | "published"),
+            "recovery_handle": source_recovery_handle.unwrap_or(""),
+            "already_published_proof": source_provenance_state == "published"
+        },
+        "unpublished_range": {
+            "commit_count": unpublished_commit_count,
+            "shape": if unpublished_commit_count == 0 {
+                "none"
+            } else if broad_range {
+                "broad"
+            } else if unpublished_commit_count > 1 {
+                "multi_commit"
+            } else {
+                "single_commit"
+            },
+            "range_age_class": range_age_class,
+            "authority_surface_overlap": authority_overlap,
+            "age_hours": range_age_hours,
+            "changed_path_count": changed_paths.len(),
+            "changed_paths_digest": simple_path_digest(&changed_paths)
+        },
+        "generated_surface_policy": {
+            "semantic_path_count": semantic_count,
+            "generated_path_count": generated_count,
+            "worker_authored_generated_surface": worker_authored_generated,
+            "classification": if worker_authored_generated {
+                "worker_authored_generated_blocked"
+            } else if generated_count > 0 && semantic_count > 0 {
+                "mixed_semantic_generated"
+            } else if generated_count > 0 {
+                "generated_only"
+            } else {
+                "semantic_or_none"
+            }
+        },
+        "stale_worker_stack_guard": {
+            "state": stale_guard_state,
+            "reasons": stale_reasons,
+            "source_handle": source_recovery_handle.unwrap_or(""),
+            "next_agent_up_action": topology_action_for_guard(stale_guard_state, &guarded_mutation.next_agent_up_action),
+            "exact_next_agent_up_action": topology_action_for_guard(stale_guard_state, &guarded_mutation.next_agent_up_action)
+        },
+        "live_basis": {
+            "state": if live_basis_stale { "stale" } else { "fresh" },
+            "validity_key": validity_key,
+            "degrade_before_mutation": live_basis_stale
+        },
+        "sync_group_basis": {
+            "state": if sync_group_basis_stale { "stale" } else { "fresh" },
+            "degrade_before_mutation": sync_group_basis_stale
+        },
+        "unsupported_topology": {
+            "state": unsupported_topology_state,
+            "reason": unsupported_reason_text,
+            "exact_next_agent_up_action": topology_action_for_guard(
+                unsupported_topology_action_state,
+                &guarded_mutation.next_agent_up_action,
+            )
+        },
+        "cost_attribution": {
+            "rust_kernel_call_count": 1,
+            "rust_adapter_jj_command_count": adapter_jj_command_count(&facts.adapter_profile),
+            "rust_adapter_subprocess_count": adapter_subprocess_count(&facts.adapter_profile),
+            "python_post_rust_graph_recompute_count": 0,
+            "performance_budget": performance_budget
+        },
+        "worker_raw_jj_guidance": false
+    })
+}
+
 fn transaction_candidate_phases(request: &SyncCoreRequest) -> Vec<String> {
     let mut phases = context_array(&request.python_context, "/transaction_candidate/phases");
     for required in ["prepare", "retry", "publish", "refresh", "fold"] {
@@ -753,6 +1274,8 @@ fn build_transaction_candidate_decision(
         blocked_reason = Some("transaction_candidate_mutation_not_allowed".to_string());
     } else if executor_requested && !executor_enabled {
         blocked_reason = Some("transaction_executor_feature_flag_disabled".to_string());
+    } else if let Some(reason) = transaction_topology_blocked_reason(request, &affected_paths) {
+        blocked_reason = Some(reason);
     }
     let safe_to_apply_before_execution = blocked_reason.is_none();
     let mut execution =
@@ -985,6 +1508,89 @@ fn build_transaction_candidate_decision(
         }),
         mutation_performed: execution.mutation_performed,
     }
+}
+
+fn transaction_topology_blocked_reason(
+    request: &SyncCoreRequest,
+    affected_paths: &[String],
+) -> Option<String> {
+    let age_class = context_text(&request.python_context, "/unpublished_range/age_class")
+        .or_else(|| context_text(&request.python_context, "/stale_worker_stack/age_class"))
+        .unwrap_or("fresh");
+    let commit_count = context_u64(&request.python_context, "/unpublished_range/commit_count")
+        .unwrap_or(0)
+        .max(
+            context_u64(
+                &request.python_context,
+                "/unpublished_range/unpublished_commit_count",
+            )
+            .unwrap_or(0),
+        );
+    let range_shape = context_text(&request.python_context, "/unpublished_range/range_shape")
+        .unwrap_or(if commit_count > 1 {
+            "multi_commit"
+        } else {
+            "single_commit"
+        });
+    let changed_paths = {
+        let mut paths = context_array(&request.python_context, "/unpublished_range/changed_paths");
+        if paths.is_empty() {
+            paths = context_array(
+                &request.python_context,
+                "/unpublished_range/working_copy_changed_paths",
+            );
+        }
+        if paths.is_empty() {
+            paths = affected_paths.to_vec();
+        }
+        paths
+    };
+    let authority_overlap = context_bool(
+        &request.python_context,
+        "/unpublished_range/authority_surface_overlap",
+    ) || context_bool(
+        &request.python_context,
+        "/stale_worker_stack/authority_surface_overlap",
+    ) || changed_paths.iter().any(|path| {
+        path.starts_with("@agents/")
+            || path.starts_with("@planning/")
+            || path.contains("AUTHORITY.md")
+            || path.contains("AGENTS.md")
+            || path.contains("CLAIMS-MAP")
+            || path.contains("VALIDATION-MANIFEST")
+            || path.contains("Apps/control_center/backend/convergence/")
+    });
+    let broad_or_old = matches!(age_class, "old" | "stale")
+        || matches!(range_shape, "broad")
+        || commit_count >= 5
+        || context_bool(&request.python_context, "/unpublished_range/broad_range");
+    if authority_overlap && broad_or_old {
+        return Some("stale_worker_stack_authority_surface_overlap".to_string());
+    }
+    let live_basis_state =
+        context_text(&request.python_context, "/live_basis/state").unwrap_or("fresh");
+    let sync_group_basis_state =
+        context_text(&request.python_context, "/sync_group/basis_state").unwrap_or("fresh");
+    let stale_live_basis = matches!(live_basis_state, "stale" | "aged" | "invalid" | "drifted")
+        || context_bool(&request.python_context, "/live_basis/stale")
+        || context_bool(&request.python_context, "/live_basis/live_head_drift")
+        || request
+            .python_context
+            .pointer("/live_basis/basis_valid")
+            .and_then(Value::as_bool)
+            == Some(false);
+    let stale_sync_group = matches!(
+        sync_group_basis_state,
+        "stale" | "aged" | "invalid" | "drifted"
+    ) || request
+        .python_context
+        .pointer("/sync_group/basis_valid")
+        .and_then(Value::as_bool)
+        == Some(false);
+    if stale_live_basis || stale_sync_group {
+        return Some("stale_live_or_sync_group_basis".to_string());
+    }
+    None
 }
 
 fn guarded_affected_paths(request: &SyncCoreRequest, fallback_paths: &[String]) -> Vec<String> {
@@ -2226,6 +2832,81 @@ fn degraded_response(
         live_root_state: "unavailable".to_string(),
         conflict_authority: "stale_packet_blocked".to_string(),
         runtime_relevance: "none".to_string(),
+        topology_summary: json!({
+            "schema_id": "control-center.agent-up.sync-core.topology-summary.v0.1",
+            "authority_owner": "python_fallback",
+            "decision_class": "degraded",
+            "selected_workspace_state": "stale",
+            "source_provenance_state": "missing",
+            "conflict_authority": "stale_packet_blocked",
+            "unsupported_topology_reason": structured.code.clone(),
+            "python_post_rust_graph_recompute_required": false,
+            "worker_raw_jj_guidance": false,
+        }),
+        conflict_packet_authority: json!({
+            "schema_id": "control-center.agent-up.sync-core.conflict-packet-authority.v0.1",
+            "conflict_packet_id": "unavailable",
+            "packet_id": "unavailable",
+            "packet_version": "v0.1",
+            "packet_owner_workspace": request.workspace_id,
+            "conflict_authority": "stale_packet_blocked",
+        }),
+        continuation_eligibility: json!({
+            "schema_id": "control-center.agent-up.sync-core.continuation-eligibility.v0.1",
+            "state": "blocked_fallback",
+            "eligible": false,
+            "blocked_reason": structured.code.clone(),
+            "after_resolving_files_command": null,
+            "worker_raw_jj_guidance": false,
+        }),
+        source_provenance: json!({
+            "state": "missing",
+            "no_local_commit_meaning": "unverifiable_source",
+            "protected_source": false,
+            "recovery_handle": "",
+            "already_published_proof": false,
+        }),
+        no_local_commit_meaning: "unverifiable_source".to_string(),
+        unpublished_range_shape: "unknown".to_string(),
+        unpublished_range: json!({
+            "commit_count": 0,
+            "shape": "unknown",
+            "range_age_class": "unknown",
+            "authority_surface_overlap": false,
+            "age_hours": 0,
+            "changed_path_count": 0,
+            "changed_paths_digest": "fnv1a64:0000000000000000",
+        }),
+        range_age_class: "unknown".to_string(),
+        authority_surface_overlap: false,
+        generated_surface_policy: json!({
+            "semantic_path_count": 0,
+            "generated_path_count": 0,
+            "worker_authored_generated_surface": false,
+            "classification": "unknown",
+        }),
+        stale_worker_stack_guard: json!({
+            "state": "degrade",
+            "reasons": ["adapter_failure"],
+            "source_handle": "",
+            "next_agent_up_action": {"action": "use_python_fallback", "command": "agent-up sync --probe --brief --json", "worker_raw_jj_guidance": false},
+            "exact_next_agent_up_action": {"action": "use_python_fallback", "command": "agent-up sync --probe --brief --json", "worker_raw_jj_guidance": false},
+        }),
+        live_basis_state: "missing".to_string(),
+        sync_group_basis_state: "missing".to_string(),
+        live_basis: json!({
+            "state": "missing",
+            "degrade_before_mutation": true,
+        }),
+        unsupported_topology_reason: Some(structured.code.clone()),
+        python_post_rust_graph_recompute_required: false,
+        python_post_rust_graph_recompute_count: 0,
+        cost_split: json!({
+            "rust_kernel_call_count": 1,
+            "rust_adapter_jj_command_count": 0,
+            "rust_adapter_subprocess_count": 0,
+            "python_post_rust_graph_recompute_count": 0,
+        }),
         provenance: Provenance {
             workspace_rev: "unknown".to_string(),
             source_rev: "unknown".to_string(),
@@ -2236,6 +2917,83 @@ fn degraded_response(
         mutation_plan: json!({}),
         journal_record: json!({}),
         next_agent_up_action: json!({"action": "use_python_fallback", "command": "agent-up sync --probe --brief --json"}),
+        topology_authority: json!({
+            "schema_id": "control-center.agent-up.sync-core.topology-authority.v0.1",
+            "authority_owner": "python_fallback",
+            "decision_class": "degraded",
+            "selected_workspace_state": "stale",
+            "conflict_packet_authority": {
+                "packet_id": "unavailable",
+                "packet_version": "v0.1",
+                "packet_owner_workspace": request.workspace_id,
+                "wrong_owner": false,
+                "conflict_authority": "stale_packet_blocked",
+                "materialized_path_digest": "fnv1a64:0000000000000000",
+                "candidate": {},
+                "continuation_eligibility": {
+                    "state": "blocked_fallback",
+                    "blocked_reason": structured.code.clone(),
+                    "after_resolving_files_command": ""
+                }
+            },
+            "source_provenance": {
+                "state": "missing",
+                "no_local_commit_meaning": "unverifiable_source",
+                "protected_source": false,
+                "recovery_handle": "",
+                "already_published_proof": false
+            },
+            "unpublished_range": {
+                "commit_count": 0,
+                "shape": "unknown",
+                "age_hours": 0,
+                "changed_path_count": 0,
+                "changed_paths_digest": "fnv1a64:0000000000000000"
+            },
+            "generated_surface_policy": {
+                "semantic_path_count": 0,
+                "generated_path_count": 0,
+                "worker_authored_generated_surface": false,
+                "classification": "unknown"
+            },
+            "stale_worker_stack_guard": {
+                "state": "degrade",
+                "reasons": ["adapter_failure"],
+                "source_handle": "",
+                "exact_next_agent_up_action": {"action": "use_python_fallback", "command": "agent-up sync --probe --brief --json", "worker_raw_jj_guidance": false}
+            },
+            "live_basis": {
+                "state": "missing",
+                "validity_key": {
+                    "workspace_id": request.workspace_id,
+                    "workspace_op_id": "",
+                    "workspace_head": "",
+                    "parent_head": "",
+                    "live_head": "",
+                    "sync_group_id": request.sync_group_id,
+                    "sync_group_head": "",
+                    "conflict_packet_id": "unavailable",
+                    "conflict_packet_version": "v0.1",
+                    "runtime_stage_hash": "",
+                    "authority_mode": request.engine_mode_requested,
+                    "adapter_profile": structured.adapter_profile
+                },
+                "degrade_before_mutation": true
+            },
+            "unsupported_topology": {
+                "state": "unsupported",
+                "reason": structured.code.clone(),
+                "exact_next_agent_up_action": {"action": "use_python_fallback", "command": "agent-up sync --probe --brief --json", "worker_raw_jj_guidance": false}
+            },
+            "cost_attribution": {
+                "rust_kernel_call_count": 1,
+                "rust_adapter_jj_command_count": 0,
+                "rust_adapter_subprocess_count": 0,
+                "python_post_rust_graph_recompute_count": 0
+            },
+            "worker_raw_jj_guidance": false
+        }),
+        worker_raw_jj_guidance: false,
         python_fallback_reason: Some(structured.code.clone()),
         parity_state: "degraded".to_string(),
         latency_ms,

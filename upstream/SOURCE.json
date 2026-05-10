@@ -1,18 +1,18 @@
 {
   "export_target": "/home/adam/publish/agent-up-jj-sync-core",
-  "generated_at_utc": "2026-05-09T22:07:44Z",
+  "generated_at_utc": "2026-05-10T01:25:50Z",
   "git": {
     "branch": null,
-    "head": "08a0a0eca671"
+    "head": null
   },
   "jj": {
-    "published_parent_change": "zqwsrxqvlmoq",
-    "published_parent_commit": "08a0a0eca671",
-    "published_parent_description": "Activate Rust transaction authority as default candidate",
-    "status": "The working copy has no changes.\nWorking copy  (@) : swvvuzyk 8f664e10 (empty) (no description set)\nParent commit (@-): zqwsrxqv 08a0a0ec rolling/control-center | Activate Rust transaction authority as default candidate",
+    "published_parent_change": "swvtvyptnmqv",
+    "published_parent_commit": "ede06d053a2c",
+    "published_parent_description": "Record final AU-V03-PCE-75 accepted source truth",
+    "status": "The working copy has no changes.\nWorking copy  (@) : xqmkoslx 06c2b170 (empty) (no description set)\nParent commit (@-): swvtvypt ede06d05 Record final AU-V03-PCE-75 accepted source truth",
     "status_ok": true,
-    "workspace_change": "swvvuzykxqxk",
-    "workspace_commit": "8f664e103db1",
+    "workspace_change": "xqmkoslxurqt",
+    "workspace_commit": "06c2b170a416",
     "workspace_description": null
   },
   "runtime": {
@@ -29,12 +29,12 @@
     "installed_runtime_version": null,
     "returncode": 0,
     "runtime_current": null,
-    "summary": "runtime current: version=20260509T220110Z revision=08a0a0eca671"
+    "summary": "runtime current: version=20260510T010224Z revision=ede06d053a2c"
   },
   "schema_id": "control-center.agent-up.sync-core.publish-source.v0.1",
   "source_authority": "control-center-jj-workspace",
   "source_path": "Apps/control_center/rust/agent-up-sync-core",
-  "source_root": "/home/adam/control-center",
+  "source_root": "/home/adam/control-center.agent-up-lead.2ic",
   "standalone_validation_commands": [
     "cargo fmt --check",
     "cargo clippy --all-targets --all-features -- -D warnings",
@@ -43,6 +43,7 @@
   ],
   "upstream_validation_commands": [
     "bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate rollout",
-    "bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate deployment-readiness"
+    "bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_rust_transaction_kernel.sh --gate deployment-readiness",
+    "bash Apps/control_center/scripts/validation/validate_agent_up_sync_core_parity_expansion.sh --gate all"
   ]
 }

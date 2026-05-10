@@ -27,9 +27,20 @@ Required classes:
   and output axes;
 - provenance;
 - conflict packet candidate;
+- topology authority summary, conflict packet authority, continuation
+  eligibility, source provenance, unpublished range shape/age, generated
+  surface policy, stale worker stack guard, live/sync-group basis state, and
+  unsupported topology reason;
+- Rust/Python cost split, including whether Python had to recompute a graph
+  after Rust returned authority metadata;
 - mutation plan and journal record when mutation is authorized;
 - next Agent-Up action;
 - fallback, telemetry, degraded reason, confidence, reason codes, and decision
   drivers.
+
+The PCE-75 topology fields are additive and must remain Python-bridge and
+Sync-State-Web visible. Broad generated-surface overlap, wrong conflict packet
+owner, or stale live/sync-group basis must fail closed with one Agent-Up next
+action instead of asking Python to rediscover topology after the Rust response.
 
 Schema changes require semver review and Python/Rust differential tests.
